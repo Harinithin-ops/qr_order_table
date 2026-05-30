@@ -78,6 +78,10 @@ app.post('/api/bills/:id/items', authMiddleware, addExtraItemToBill);
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Express server running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Express server running on port ${PORT}`);
+  });
+}
+
+export default app;
