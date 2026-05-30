@@ -10,7 +10,7 @@ import { WaiterCallButton } from '@/components/menu/WaiterCallButton';
 import { OrderTracker } from '@/components/menu/OrderTracker';
 import { CartProvider } from '@/hooks/useCart';
 import { HOTEL_NAME } from '@/lib/utils';
-import { UtensilsCrossed, Search, X } from 'lucide-react';
+import { UtensilsCrossed, Search, X, User, Edit2 } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -22,6 +22,15 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [customerName, setCustomerName] = useState<string | null>(null);
+  const [inputName, setInputName] = useState('');
+
+  useEffect(() => {
+    const savedName = localStorage.getItem('kh_customer_name');
+    if (savedName) {
+      setCustomerName(savedName);
+    }
+  }, []);
 
   // Ref to scroll the item list back to top on category switch
   const itemListRef = useRef<HTMLDivElement>(null);
@@ -85,15 +94,87 @@ export default function MenuPage() {
     );
   }
 
+  if (!customerName && !loading) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4 max-w-md mx-auto shadow-2xl relative overflow-hidden">
+        {/* Decorative background blur blobs */}
+        <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-100 rounded-full blur-3xl opacity-50"></div>
+        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-green-100 rounded-full blur-3xl opacity-50"></div>
+
+        <div className="w-full bg-white rounded-2xl p-6 shadow-xl border border-gray-100 relative z-10 text-center animate-slide-up">
+          <img src="/logo.png" alt={HOTEL_NAME} className="h-28 w-auto mx-auto drop-shadow-sm mb-4" />
+          
+          <h2 className="font-serif font-bold text-2xl text-gray-900 mb-1">Welcome to {HOTEL_NAME}</h2>
+          <p className="text-xs text-gray-500 mb-6">Start ordering at Table <span className="font-bold text-green-600">{tableId.replace('table-', '')}</span></p>
+
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (inputName.trim()) {
+              localStorage.setItem('kh_customer_name', inputName.trim());
+              setCustomerName(inputName.trim());
+            }
+          }} className="space-y-4 text-left">
+            <div>
+              <label htmlFor="customer-name" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                Enter your name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  id="customer-name"
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  required
+                  value={inputName}
+                  onChange={(e) => setInputName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white font-semibold rounded-xl text-sm shadow-md shadow-red-600/10 transition-all flex items-center justify-center gap-2"
+            >
+              <span>Explore Menu</span> &rarr;
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <CartProvider tableId={tableId}>
       <main className="min-h-screen bg-gray-50 pb-28 max-w-md mx-auto shadow-2xl relative overflow-x-hidden">
         {/* Header */}
         <header className="bg-white px-4 pt-5 pb-3 flex flex-col items-center justify-center text-center shadow-sm relative z-10">
           <img src="/logo.png" alt={HOTEL_NAME} className="h-24 w-auto drop-shadow-sm mb-1" />
-          <p className="inline-flex items-center gap-1.5 text-gray-500 text-sm font-semibold bg-gray-50 px-3 py-1 rounded-full border border-gray-100">
-            Table <span className="text-green-600 font-bold">{tableId.replace('table-', '')}</span>
-          </p>
+          <div className="flex flex-col items-center gap-1">
+            <p className="inline-flex items-center gap-1.5 text-gray-500 text-sm font-semibold bg-gray-50 px-3 py-1 rounded-full border border-gray-100">
+              Table <span className="text-green-600 font-bold">{tableId.replace('table-', '')}</span>
+            </p>
+            {customerName && (
+              <div className="flex items-center justify-center gap-1 text-[11px] text-gray-500 mt-1.5">
+                <span>Welcome, </span>
+                <span className="font-bold text-gray-800">{customerName}</span>
+                <button
+                  onClick={() => {
+                    const newName = prompt('Update your name:', customerName);
+                    if (newName && newName.trim()) {
+                      localStorage.setItem('kh_customer_name', newName.trim());
+                      setCustomerName(newName.trim());
+                    }
+                  }}
+                  className="p-0.5 rounded text-gray-400 hover:text-red-500 transition"
+                  title="Edit Name"
+                >
+                  <Edit2 size={10} />
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Category Sticky Nav */}

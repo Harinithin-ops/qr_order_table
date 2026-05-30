@@ -35,7 +35,13 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
         body: JSON.stringify({
           tableId,
           items,
-          notes: notes || undefined,
+          notes: (() => {
+            const customerName = localStorage.getItem('kh_customer_name');
+            if (customerName) {
+              return `Name: ${customerName}${notes ? ` | Notes: ${notes}` : ''}`;
+            }
+            return notes || undefined;
+          })(),
         }),
       });
 
