@@ -64,4 +64,4 @@ export const HOTEL_NAME = 'Kavitha Hotel';
 export const HOTEL_ADDRESS = '123 Main Road, City Center';
 export const HOTEL_PHONE = '+91 98765 43210';
 export const HOTEL_GST = '29ABCDE1234F1Z5';
-export const HOTEL_UPI_ID = 'kavithahotel@upi';
+export const HOTEL_UPI_ID = 'kavithahotel47471-1@oksbi';

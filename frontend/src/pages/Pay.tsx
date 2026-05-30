@@ -179,12 +179,58 @@ export default function CustomerPayPage() {
               <QRCodeSVG value={upiLink} size={180} level="M" />
             </div>
             
-            <a 
-              href={upiLink}
-              className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-200 mb-6 active:scale-95 transition-transform"
-            >
-              <LinkIcon size={18} /> Pay with Any UPI App
-            </a>
+            {/* UPI ID Display & Copy */}
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4 flex items-center justify-between text-left">
+              <div>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">UPI ID</p>
+                <p className="text-xs font-mono font-bold text-gray-800">{HOTEL_UPI_ID}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(HOTEL_UPI_ID);
+                  alert('UPI ID copied to clipboard!');
+                }}
+                className="bg-white hover:bg-gray-50 text-blue-600 border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition cursor-pointer"
+              >
+                Copy
+              </button>
+            </div>
+
+            {/* Payment App Links */}
+            <div className="space-y-3 mb-6 text-left">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Select UPI App to Pay</p>
+              <div className="grid grid-cols-2 gap-2">
+                <a 
+                  href={upiLink} 
+                  className="flex items-center gap-2 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition active:scale-95"
+                >
+                   <span className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center font-bold text-[10px] text-blue-600">G</span>
+                   <span className="font-semibold text-xs text-gray-700">Google Pay</span>
+                </a>
+                <a 
+                  href={upiLink} 
+                  className="flex items-center gap-2 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition active:scale-95"
+                >
+                   <span className="w-6 h-6 rounded-full bg-purple-50 flex items-center justify-center font-bold text-[10px] text-purple-600">P</span>
+                   <span className="font-semibold text-xs text-gray-700">PhonePe</span>
+                </a>
+                <a 
+                  href={upiLink} 
+                  className="flex items-center gap-2 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition active:scale-95"
+                >
+                   <span className="w-6 h-6 rounded-full bg-cyan-50 flex items-center justify-center font-bold text-[10px] text-cyan-600">Py</span>
+                   <span className="font-semibold text-xs text-gray-700">Paytm</span>
+                </a>
+                <a 
+                  href={upiLink} 
+                  className="flex items-center gap-2 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition active:scale-95"
+                >
+                   <span className="w-6 h-6 rounded-full bg-green-50 flex items-center justify-center font-bold text-[10px] text-green-600">O</span>
+                   <span className="font-semibold text-xs text-gray-700">Other App</span>
+                </a>
+              </div>
+            </div>
             
             <div className="border-t border-gray-100 pt-5">
               <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wider">Step 2: Enter Reference Number</p>
