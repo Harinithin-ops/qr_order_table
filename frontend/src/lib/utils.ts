@@ -60,7 +60,7 @@ export function getStatusLabel(status: string): string {
 export const ORDER_FLOW: string[] = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'PENDING', 'PAID'];
 
 export const TAX_RATE = 0.02; // 2% GST
-export const HOTEL_NAME = 'Kavitha Hotel';
+export const HOTEL_NAME = 'Hotel kavitha';
 export const HOTEL_ADDRESS = '123 Main Road, City Center';
 export const HOTEL_PHONE = '+91 98765 43210';
 export const HOTEL_GST = '29ABCDE1234F1Z5';

@@ -75,7 +75,7 @@ export default function CustomerPayPage() {
   const isAwaiting = bill.paymentStatus === 'AWAITING_CONFIRMATION';
   
   // UPI Deep link standard format
-  const upiLink = `upi://pay?pa=${HOTEL_UPI_ID}&pn=${encodeURIComponent(HOTEL_NAME)}&am=${bill.total}&cu=INR&tn=Bill%20${bill.billNumber}`;
+  const upiLink = `upi://pay?pa=${HOTEL_UPI_ID}&pn=${encodeURIComponent(HOTEL_NAME)}&aid=uGICAgKCs-PbMfg&am=${bill.total}&cu=INR&tn=Bill%20${bill.billNumber}`;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 max-w-md mx-auto shadow-xl">
