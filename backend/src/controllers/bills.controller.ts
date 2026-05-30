@@ -307,6 +307,79 @@ export async function addExtraItemToBill(req: Request, res: Response) {
   }
 }
 
+/**
+ * DELETE /api/bills/:id
+ * Deletes a single bill and its associated order + order items.
+ * Admin-only.
+ */
+export async function deleteBill(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const bill = await prisma.bill.findUnique({
+      where: { id },
+      include: { order: true },
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Delete order items first (FK constraint)
+      await tx.orderItem.deleteMany({ where: { orderId: bill.orderId } });
+      // Delete the bill
+      await tx.bill.delete({ where: { id } });
+      // Delete the order
+      await tx.order.delete({ where: { id: bill.orderId } });
+    });
+
+    return res.json({ success: true, message: 'Bill and associated order deleted successfully.' });
+  } catch (error) {
+    console.error('Failed to delete bill:', error);
+    return res.status(500).json({ error: 'Failed to delete bill' });
+  }
+}
+
+/**
+ * DELETE /api/bills/cleanup
+ * Deletes all bills (and their orders/items) older than 2 days.
+ * Admin-only.
+ */
+export async function cleanupOldRecords(req: Request, res: Response) {
+  try {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    // Find bills older than 2 days
+    const oldBills = await prisma.bill.findMany({
+      where: { createdAt: { lt: twoDaysAgo } },
+      select: { id: true, orderId: true },
+    });
+
+    if (oldBills.length === 0) {
+      return res.json({ success: true, deleted: 0, message: 'No records older than 2 days found.' });
+    }
+
+    const billIds = oldBills.map((b) => b.id);
+    const orderIds = oldBills.map((b) => b.orderId);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.bill.deleteMany({ where: { id: { in: billIds } } });
+      await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+    });
+
+    return res.json({
+      success: true,
+      deleted: oldBills.length,
+      message: `Deleted ${oldBills.length} record(s) older than 2 days.`,
+    });
+  } catch (error) {
+    console.error('Failed to cleanup old records:', error);
+    return res.status(500).json({ error: 'Failed to cleanup old records' });
+  }
+}
+
 export async function mergeBills(req: Request, res: Response) {
   try {
     const { sourceBillId, targetBillId } = req.body;

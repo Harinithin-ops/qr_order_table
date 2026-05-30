@@ -25,7 +25,9 @@ import {
   payBill,
   addExtraItemToBill,
   mergeBills,
-  tableCheckout
+  tableCheckout,
+  deleteBill,
+  cleanupOldRecords
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 
@@ -83,8 +85,11 @@ app.post('/api/orders/:id/cancel', cancelOrder);
 // Bills
 app.post('/api/bills', authMiddleware, adminOnly, createBill);
 app.get('/api/bills', authMiddleware, adminOnly, getBills);
+// NOTE: static routes must come before :id to avoid 'cleanup' being matched as an id
+app.delete('/api/bills/cleanup', authMiddleware, adminOnly, cleanupOldRecords);
 app.get('/api/bills/:id', getBillById);
 app.patch('/api/bills/:id', authMiddleware, adminOnly, updateBill);
+app.delete('/api/bills/:id', authMiddleware, adminOnly, deleteBill);
 app.post('/api/bills/:id/pay', payBill);
 app.post('/api/bills/:id/items', authMiddleware, adminOnly, addExtraItemToBill);
 app.post('/api/bills/merge', authMiddleware, adminOnly, mergeBills);
@@ -94,6 +99,34 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
+
+// Auto-cleanup: delete all bills/orders older than 2 days every 48 hours
+const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+const runAutoCleanup = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    const twoDaysAgo = new Date(Date.now() - TWO_DAYS_MS);
+    const oldBills = await prisma.bill.findMany({
+      where: { createdAt: { lt: twoDaysAgo } },
+      select: { id: true, orderId: true },
+    });
+    if (oldBills.length > 0) {
+      const billIds = oldBills.map((b: any) => b.id);
+      const orderIds = oldBills.map((b: any) => b.orderId);
+      await prisma.$transaction(async (tx: any) => {
+        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+        await tx.bill.deleteMany({ where: { id: { in: billIds } } });
+        await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+      });
+      console.log(`🧹 Auto-cleanup: removed ${oldBills.length} record(s) older than 2 days.`);
+    }
+  } catch (err) {
+    console.error('Auto-cleanup failed:', err);
+  }
+};
+// Run once on startup, then every 48 h
+runAutoCleanup();
+setInterval(runAutoCleanup, TWO_DAYS_MS);
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {

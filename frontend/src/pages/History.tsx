@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Receipt, Search, ExternalLink, Activity } from 'lucide-react';
+import { Receipt, Search, ExternalLink, Activity, Trash2, AlertTriangle } from 'lucide-react';
 
 interface BillHistoryItem {
   id: string;
@@ -29,6 +29,8 @@ export default function BillingHistoryPage() {
   const [bills, setBills] = useState<BillHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [cleaning, setCleaning] = useState(false);
 
   // Merge Mode States
   const [isMergeMode, setIsMergeMode] = useState(false);
@@ -82,6 +84,53 @@ export default function BillingHistoryPage() {
     } catch (err) {
       console.error(err);
       alert('An error occurred while approving the payment');
+    }
+  };
+
+  /** Delete a single bill record */
+  const handleDeleteBill = async (billId: string, billNumber: string) => {
+    if (!window.confirm(`Delete bill #${billNumber}? This will permanently remove the bill and its order from the database.`)) {
+      return;
+    }
+    setDeletingId(billId);
+    try {
+      const res = await fetch(`/api/bills/${billId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setBills(prev => prev.filter(b => b.id !== billId));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to delete bill');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error while deleting bill');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  /** Delete all records older than 2 days */
+  const handleCleanupOldRecords = async () => {
+    if (!window.confirm('This will permanently delete all bills and orders older than 2 days. Continue?')) {
+      return;
+    }
+    setCleaning(true);
+    try {
+      const res = await fetch('/api/bills/cleanup', { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        // Reload the list after cleanup
+        const listRes = await fetch('/api/bills');
+        if (listRes.ok) setBills(await listRes.json());
+        alert(data.message || `Deleted ${data.deleted} old record(s).`);
+      } else {
+        alert(data.error || 'Failed to cleanup old records');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error during cleanup');
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -162,6 +211,10 @@ export default function BillingHistoryPage() {
 
   const totalRevenue = bills.filter(b => b.paymentStatus === 'PAID').reduce((acc, curr) => acc + curr.total, 0);
 
+  // Count records older than 2 days for the cleanup badge
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  const oldCount = bills.filter(b => new Date(b.createdAt) < twoDaysAgo).length;
+
   if (loading) {
     return <div className="p-8 flex justify-center bg-gray-50 min-h-screen"><Activity className="animate-spin text-green-600" size={32} /></div>;
   }
@@ -174,7 +227,22 @@ export default function BillingHistoryPage() {
           <p className="text-gray-500">View and manage past invoices and completed orders.</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Clear old records button */}
+          <button
+            onClick={handleCleanupOldRecords}
+            disabled={cleaning || oldCount === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition shadow-sm bg-red-50 text-red-700 border-red-200 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={oldCount === 0 ? 'No records older than 2 days' : `Delete ${oldCount} record(s) older than 2 days`}
+          >
+            {cleaning ? (
+              <Activity className="animate-spin" size={14} />
+            ) : (
+              <AlertTriangle size={14} />
+            )}
+            {cleaning ? 'Clearing...' : `Clear Old Records${oldCount > 0 ? ` (${oldCount})` : ''}`}
+          </button>
+
           <button
             onClick={() => {
               setIsMergeMode(!isMergeMode);
@@ -293,67 +361,85 @@ export default function BillingHistoryPage() {
             <tbody className="divide-y divide-gray-100 text-sm">
               {filteredBills.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                     <Receipt size={32} className="mx-auto mb-3 text-gray-300" />
                     No bills found.
                   </td>
                 </tr>
               ) : (
-                filteredBills.map(bill => (
-                  <tr key={bill.id} className="hover:bg-gray-50 transition">
-                    {isMergeMode && (
-                      <td className="px-6 py-4 text-center">
-                        {bill.paymentStatus !== 'PAID' ? (
-                          <input
-                            type="checkbox"
-                            checked={selectedMergeIds.includes(bill.id)}
-                            onChange={() => handleToggleSelectMerge(bill.id)}
-                            disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
-                            className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
-                          />
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
+                filteredBills.map(bill => {
+                  const isOld = new Date(bill.createdAt) < twoDaysAgo;
+                  return (
+                    <tr key={bill.id} className={`hover:bg-gray-50 transition ${isOld ? 'bg-red-50/30' : ''}`}>
+                      {isMergeMode && (
+                        <td className="px-6 py-4 text-center">
+                          {bill.paymentStatus !== 'PAID' ? (
+                            <input
+                              type="checkbox"
+                              checked={selectedMergeIds.includes(bill.id)}
+                              onChange={() => handleToggleSelectMerge(bill.id)}
+                              disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
+                              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+                            />
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="px-6 py-4 font-medium text-gray-900">
+                        {bill.billNumber}
+                        {isOld && <span className="ml-2 text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Old</span>}
                       </td>
-                    )}
-                    <td className="px-6 py-4 font-medium text-gray-900">{bill.billNumber}</td>
-                    <td className="px-6 py-4 text-gray-500">{formatDate(bill.createdAt)}</td>
-                    <td className="px-6 py-4 font-medium">Table {bill.order.table.tableNumber}</td>
-                    <td className="px-6 py-4 font-medium text-gray-700">{getCustomerName(bill.order.notes)}</td>
-                    <td className="px-6 py-4 font-bold text-right">{formatCurrency(bill.total)}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        bill.paymentStatus === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {bill.paymentStatus}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center text-gray-500">
-                       <div className="font-medium text-gray-900">{bill.paymentMethod || '-'}</div>
-                       {bill.paymentReference && (
-                          <div className="text-xs text-gray-400 mt-1">{bill.paymentReference}</div>
-                       )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {bill.paymentStatus !== 'PAID' && (
-                          <button
-                            onClick={() => handleApprovePayment(bill.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition"
+                      <td className="px-6 py-4 text-gray-500">{formatDate(bill.createdAt)}</td>
+                      <td className="px-6 py-4 font-medium">Table {bill.order.table.tableNumber}</td>
+                      <td className="px-6 py-4 font-medium text-gray-700">{getCustomerName(bill.order.notes)}</td>
+                      <td className="px-6 py-4 font-bold text-right">{formatCurrency(bill.total)}</td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          bill.paymentStatus === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {bill.paymentStatus}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center text-gray-500">
+                         <div className="font-medium text-gray-900">{bill.paymentMethod || '-'}</div>
+                         {bill.paymentReference && (
+                            <div className="text-xs text-gray-400 mt-1">{bill.paymentReference}</div>
+                         )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {bill.paymentStatus !== 'PAID' && (
+                            <button
+                              onClick={() => handleApprovePayment(bill.id)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition"
+                            >
+                              Bill Paid
+                            </button>
+                          )}
+                          <Link 
+                            to={`/bill/${bill.id}`}
+                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium text-xs"
                           >
-                            Bill Paid
+                             View <ExternalLink size={14}/>
+                          </Link>
+                          {/* Delete button */}
+                          <button
+                            onClick={() => handleDeleteBill(bill.id, bill.billNumber)}
+                            disabled={deletingId === bill.id}
+                            title="Delete this bill permanently"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50"
+                          >
+                            {deletingId === bill.id
+                              ? <Activity size={14} className="animate-spin" />
+                              : <Trash2 size={14} />
+                            }
                           </button>
-                        )}
-                        <Link 
-                          to={`/bill/${bill.id}`}
-                          className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium text-xs"
-                        >
-                           View <ExternalLink size={14}/>
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -367,68 +453,86 @@ export default function BillingHistoryPage() {
               No bills found.
             </div>
           ) : (
-            filteredBills.map(bill => (
-              <div key={bill.id} className="p-4 flex flex-col gap-3 relative">
-                {isMergeMode && bill.paymentStatus !== 'PAID' && (
-                  <div className="absolute top-4 right-4 z-10 bg-white/95 p-1 px-2 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1.5 animate-slide-up">
-                    <input
-                      type="checkbox"
-                      checked={selectedMergeIds.includes(bill.id)}
-                      onChange={() => handleToggleSelectMerge(bill.id)}
-                      disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
-                      className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
-                    />
-                    <span className="text-[10px] font-bold text-emerald-800">Merge</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-bold text-gray-900">#{bill.billNumber}</div>
-                    <div className="text-xs text-gray-400">{formatDate(bill.createdAt)}</div>
-                  </div>
-                  <span className={`px-2 py-1 rounded text-[10px] font-bold ${
-                    bill.paymentStatus === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {bill.paymentStatus}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <div className="font-medium text-gray-700">
-                    Table {bill.order.table.tableNumber}
-                    <span className="text-xs text-gray-400 font-normal ml-1.5">
-                      ({getCustomerName(bill.order.notes)})
+            filteredBills.map(bill => {
+              const isOld = new Date(bill.createdAt) < twoDaysAgo;
+              return (
+                <div key={bill.id} className={`p-4 flex flex-col gap-3 relative ${isOld ? 'bg-red-50/30' : ''}`}>
+                  {isMergeMode && bill.paymentStatus !== 'PAID' && (
+                    <div className="absolute top-4 right-4 z-10 bg-white/95 p-1 px-2 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1.5 animate-slide-up">
+                      <input
+                        type="checkbox"
+                        checked={selectedMergeIds.includes(bill.id)}
+                        onChange={() => handleToggleSelectMerge(bill.id)}
+                        disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
+                        className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span className="text-[10px] font-bold text-emerald-800">Merge</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-gray-900 flex items-center gap-1.5">
+                        #{bill.billNumber}
+                        {isOld && <span className="text-[9px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Old</span>}
+                      </div>
+                      <div className="text-xs text-gray-400">{formatDate(bill.createdAt)}</div>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold ${
+                      bill.paymentStatus === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {bill.paymentStatus}
                     </span>
                   </div>
-                  <div className="font-bold text-gray-900">{formatCurrency(bill.total)}</div>
-                </div>
-                <div className="flex justify-between items-end">
-                  <div className="text-xs text-gray-500">
-                    {bill.paymentMethod ? (
-                      <span className="flex flex-col">
-                        <span>{bill.paymentMethod}</span>
-                        {bill.paymentReference && <span className="text-[10px] font-mono">{bill.paymentReference}</span>}
+                  <div className="flex justify-between items-center text-sm">
+                    <div className="font-medium text-gray-700">
+                      Table {bill.order.table.tableNumber}
+                      <span className="text-xs text-gray-400 font-normal ml-1.5">
+                        ({getCustomerName(bill.order.notes)})
                       </span>
-                    ) : '-'}
+                    </div>
+                    <div className="font-bold text-gray-900">{formatCurrency(bill.total)}</div>
                   </div>
-                  <div className="flex gap-2">
-                    {bill.paymentStatus !== 'PAID' && (
-                      <button
-                        onClick={() => handleApprovePayment(bill.id)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition"
+                  <div className="flex justify-between items-end">
+                    <div className="text-xs text-gray-500">
+                      {bill.paymentMethod ? (
+                        <span className="flex flex-col">
+                          <span>{bill.paymentMethod}</span>
+                          {bill.paymentReference && <span className="text-[10px] font-mono">{bill.paymentReference}</span>}
+                        </span>
+                      ) : '-'}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      {bill.paymentStatus !== 'PAID' && (
+                        <button
+                          onClick={() => handleApprovePayment(bill.id)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition"
+                        >
+                          Bill Paid
+                        </button>
+                      )}
+                      <Link 
+                        to={`/bill/${bill.id}`}
+                        className="flex items-center gap-1 text-red-600 font-bold text-xs bg-red-50 px-3 py-1.5 rounded-lg"
                       >
-                        Bill Paid
+                         View Invoice <ExternalLink size={14}/>
+                      </Link>
+                      {/* Delete button (mobile) */}
+                      <button
+                        onClick={() => handleDeleteBill(bill.id, bill.billNumber)}
+                        disabled={deletingId === bill.id}
+                        title="Delete this bill permanently"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition border border-gray-200 disabled:opacity-50"
+                      >
+                        {deletingId === bill.id
+                          ? <Activity size={14} className="animate-spin" />
+                          : <Trash2 size={14} />
+                        }
                       </button>
-                    )}
-                    <Link 
-                      to={`/bill/${bill.id}`}
-                      className="flex items-center gap-1 text-red-600 font-bold text-xs bg-red-50 px-3 py-1.5 rounded-lg"
-                    >
-                       View Invoice <ExternalLink size={14}/>
-                    </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
