@@ -10,7 +10,7 @@ import { WaiterCallButton } from '@/components/menu/WaiterCallButton';
 import { CartProvider } from '@/hooks/useCart';
 import { useEventSource } from '@/hooks/useEventSource';
 import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
-import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
+import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2, ShoppingBag } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -206,7 +206,7 @@ export default function MenuPage() {
         />
 
         <div className="p-3" ref={itemListRef}>
-          {/* Active Order Banners — one per concurrent order */}
+          {/* Active Order Banners + unified Pay All when >1 order */}
           {orderIds.length > 0 && (
             <div className="space-y-2 mb-2">
               {orderIds.map((oid, idx) => (
@@ -219,6 +219,16 @@ export default function MenuPage() {
                   onCompleted={() => handleOrderCompleted(oid)}
                 />
               ))}
+              {/* Single unified Pay All when there are 2+ orders */}
+              {orderIds.length > 1 && (
+                <Link
+                  to={`/checkout/${tableId}`}
+                  className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl text-sm shadow-lg shadow-red-600/20 transition active:scale-[0.98] animate-slide-up"
+                >
+                  <ShoppingBag size={16} />
+                  Pay All {orderIds.length} Orders Together
+                </Link>
+              )}
             </div>
           )}
 
@@ -424,7 +434,7 @@ function ActiveOrderBanner({
           Track
         </Link>
         <Link
-          to={`/payment/${orderId}`}
+          to={`/checkout/${tableId}`}
           className="text-[10px] font-bold bg-red-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-red-700 transition active:scale-95 shadow-sm"
         >
           Pay Bill

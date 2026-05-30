@@ -12,6 +12,7 @@ import AdminQR from './pages/AdminQR';
 import AdminMenu from './pages/AdminMenu';
 import BillMachine from './pages/BillMachine';
 import AdminLayout from './components/dashboard/AdminLayout';
+import Checkout from './pages/Checkout';
 import { useEffect, useState } from 'react';
 import { Activity } from 'lucide-react';
 
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/bill/:id" element={<Bill />} />
         <Route path="/track/:orderId" element={<TrackOrder />} />
         <Route path="/payment/:orderId" element={<Payment />} />
+        <Route path="/checkout/:tableId" element={<Checkout />} />
 
         {/* Admin Login Route */}
         <Route path="/login" element={<Login />} />

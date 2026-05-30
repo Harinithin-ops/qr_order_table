@@ -621,32 +621,34 @@ export default function BillMachinePage() {
               </div>
 
               <div className="border-t border-gray-150 pt-4 space-y-3">
-                {btDevice && (
-                  <button
-                    onClick={printViaBluetooth}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/10 active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <Bluetooth size={18} /> Print via Bluetooth
-                  </button>
-                )}
+                 {btDevice && (
+                   <button
+                     onClick={printViaBluetooth}
+                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/10 active:scale-95 transition-transform cursor-pointer"
+                   >
+                     <Bluetooth size={18} /> Print via Bluetooth
+                   </button>
+                 )}
 
-                {usbDevice && (
-                  <button
-                    onClick={printViaUsb}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-600/10 active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <Usb size={18} /> Print via USB
-                  </button>
-                )}
+                 {usbDevice && (
+                   <button
+                     onClick={printViaUsb}
+                     className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-600/10 active:scale-95 transition-transform cursor-pointer"
+                   >
+                     <Usb size={18} /> Print via USB
+                   </button>
+                 )}
 
-                {!btDevice && !usbDevice && (
-                  <button
-                    onClick={handlePrint}
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition-transform cursor-pointer"
-                  >
-                    <Printer size={18} /> Print Receipt (TVS)
-                  </button>
-                )}
+                 <button
+                   onClick={handlePrint}
+                   className={`w-full font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer ${
+                     btDevice || usbDevice 
+                       ? 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 shadow-sm'
+                       : 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/10'
+                   }`}
+                 >
+                   <Printer size={18} /> Print Receipt (TVS)
+                 </button>
 
                 <button
                   onClick={() => copyPayLink(selectedBill.id)}

@@ -72,24 +72,22 @@ export function OrderCard({ order, onUpdateStatus, onRequestBill }: Props) {
             </button>
           )}
 
-          {order.status === 'SERVED' && onRequestBill ? (
-            order.bill?.paymentStatus === 'AWAITING_CONFIRMATION' ? (
-              <Link
-                to={`/bill/${order.bill.id}`}
-                className={`${order.bill.paymentMethod === 'CASH' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium flex flex-col items-center gap-0.5 animate-pulse shrink-0`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <CreditCard size={14} /> <span className="whitespace-nowrap">Confirm {order.bill.paymentMethod}</span>
-                </span>
-              </Link>
-            ) : (
-              <button 
-                onClick={() => onRequestBill(order.id)}
-                className="bg-gray-900 text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium hover:bg-black flex items-center gap-1.5 shrink-0"
-              >
-                <Receipt size={14} /> Bill
-              </button>
-            )
+          {order.bill?.paymentStatus === 'AWAITING_CONFIRMATION' ? (
+            <Link
+              to={`/bill/${order.bill.id}`}
+              className={`${order.bill.paymentMethod === 'CASH' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium flex flex-col items-center gap-0.5 animate-pulse shrink-0`}
+            >
+              <span className="flex items-center gap-1.5">
+                <CreditCard size={14} /> <span className="whitespace-nowrap">Confirm {order.bill.paymentMethod}</span>
+              </span>
+            </Link>
+          ) : (order.status === 'SERVED' || order.status === 'PENDING') && onRequestBill ? (
+            <button 
+              onClick={() => onRequestBill(order.id)}
+              className="bg-gray-900 text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium hover:bg-black flex items-center gap-1.5 shrink-0"
+            >
+              <Receipt size={14} /> Bill
+            </button>
           ) : nextStatus ? (
             <button 
               onClick={() => onUpdateStatus(order.id, nextStatus)}

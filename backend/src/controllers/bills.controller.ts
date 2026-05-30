@@ -65,6 +65,11 @@ export async function getBills(req: Request, res: Response) {
         order: {
           include: {
             table: true,
+            items: {
+              include: {
+                menuItem: true
+              }
+            }
           }
         }
       },
@@ -412,3 +417,173 @@ export async function mergeBills(req: Request, res: Response) {
   }
 }
 
+/**
+ * Customer-facing unified checkout:
+ * Generates bills for all active non-paid orders at a table,
+ * then merges them all into a single bill and returns it.
+ */
+export async function tableCheckout(req: Request, res: Response) {
+  try {
+    const { tableId } = req.params; // can be slug or id
+
+    // Resolve table
+    const table = await prisma.table.findFirst({
+      where: { OR: [{ id: tableId }, { slug: tableId }] }
+    });
+
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Fetch all orders for this table that are not yet PAID or CANCELLED
+    const orders = await prisma.order.findMany({
+      where: {
+        tableId: table.id,
+        status: { notIn: ['PAID', 'CANCELLED'] }
+      },
+      include: { items: true, bill: true }
+    });
+
+    if (orders.length === 0) {
+      return res.status(404).json({ error: 'No active orders found for this table' });
+    }
+
+    // Step 1: Generate bills for any orders that don't have one yet
+    for (const order of orders) {
+      if (!order.bill) {
+        const subtotal = order.total;
+        const taxAmount = subtotal * TAX_RATE;
+        const total = subtotal + taxAmount;
+
+        const bill = await prisma.bill.create({
+          data: {
+            orderId: order.id,
+            subtotal,
+            taxAmount,
+            total,
+            billNumber: await generateBillNumber(),
+          }
+        });
+
+        // Mark order as PENDING
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'PENDING' }
+        });
+
+        eventEmitter.emit('ORDER_UPDATE', {
+          orderId: order.id,
+          status: 'PENDING',
+          tableId: table.id,
+          billId: bill.id,
+        });
+      } else if (!['PENDING', 'SERVED', 'READY'].includes(order.status) === false) {
+        // Ensure order status is PENDING
+        if (order.status !== 'PENDING') {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'PENDING' }
+          });
+        }
+      }
+    }
+
+    // Re-fetch orders with bills
+    const ordersWithBills = await prisma.order.findMany({
+      where: {
+        tableId: table.id,
+        status: { notIn: ['PAID', 'CANCELLED'] }
+      },
+      include: {
+        bill: true,
+        items: { include: { menuItem: true } }
+      }
+    });
+
+    const bills = ordersWithBills.map(o => o.bill).filter(Boolean) as any[];
+
+    if (bills.length === 0) {
+      return res.status(500).json({ error: 'Failed to generate bills' });
+    }
+
+    // Step 2: If only one bill, return it directly
+    if (bills.length === 1) {
+      const singleBill = await prisma.bill.findUnique({
+        where: { id: bills[0].id },
+        include: {
+          order: {
+            include: {
+              table: true,
+              items: { include: { menuItem: true } }
+            }
+          }
+        }
+      });
+      return res.json(singleBill);
+    }
+
+    // Step 3: Merge all bills into the first one
+    const [primaryBill, ...otherBills] = bills;
+
+    const mergedBill = await prisma.$transaction(async (tx) => {
+      for (const sourceBill of otherBills) {
+        // Move all items from source order to primary order
+        await tx.orderItem.updateMany({
+          where: { orderId: sourceBill.orderId },
+          data: { orderId: primaryBill.orderId }
+        });
+
+        // Delete source bill and order
+        await tx.bill.delete({ where: { id: sourceBill.id } });
+        await tx.order.delete({ where: { id: sourceBill.orderId } });
+      }
+
+      // Recalculate totals for primary order
+      const allItems = await tx.orderItem.findMany({
+        where: { orderId: primaryBill.orderId }
+      });
+
+      const newSubtotal = allItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+      const newTaxAmount = newSubtotal * TAX_RATE;
+      const newTotal = newSubtotal + newTaxAmount;
+
+      // Update primary order total
+      await tx.order.update({
+        where: { id: primaryBill.orderId },
+        data: { total: newSubtotal }
+      });
+
+      // Update primary bill totals
+      const updated = await tx.bill.update({
+        where: { id: primaryBill.id },
+        data: {
+          subtotal: newSubtotal,
+          taxAmount: newTaxAmount,
+          total: newTotal
+        },
+        include: {
+          order: {
+            include: {
+              table: true,
+              items: { include: { menuItem: true } }
+            }
+          }
+        }
+      });
+
+      eventEmitter.emit('ORDER_UPDATE', {
+        orderId: primaryBill.orderId,
+        status: 'PENDING',
+        tableId: table.id,
+        billId: primaryBill.id,
+      });
+
+      return updated;
+    });
+
+    return res.json(mergedBill);
+  } catch (error) {
+    console.error('Failed to process table checkout:', error);
+    return res.status(500).json({ error: 'Failed to process checkout' });
+  }
+}

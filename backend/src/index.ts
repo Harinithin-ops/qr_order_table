@@ -24,7 +24,8 @@ import {
   updateBill,
   payBill,
   addExtraItemToBill,
-  mergeBills
+  mergeBills,
+  tableCheckout
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 
@@ -87,6 +88,9 @@ app.patch('/api/bills/:id', authMiddleware, adminOnly, updateBill);
 app.post('/api/bills/:id/pay', payBill);
 app.post('/api/bills/:id/items', authMiddleware, adminOnly, addExtraItemToBill);
 app.post('/api/bills/merge', authMiddleware, adminOnly, mergeBills);
+
+// Customer-facing unified checkout (merges all orders for a table into 1 bill)
+app.post('/api/tables/:tableId/checkout', tableCheckout);
 
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);

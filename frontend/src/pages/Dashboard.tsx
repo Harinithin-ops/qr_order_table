@@ -88,19 +88,25 @@ export default function DashboardPage() {
 
   const handleCreateBill = async (orderId: string) => {
     try {
-      const res = await fetch('/api/bills', {
+      const orderObj = orders.find(o => o.id === orderId);
+      if (!orderObj) return;
+
+      const res = await fetch(`/api/tables/${orderObj.tableId}/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId })
+        headers: { 'Content-Type': 'application/json' }
       });
       
       if (res.ok) {
         const bill = await res.json();
         // Redirect to bill page
         navigate(`/bill/${bill.id}`);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to generate unified bill for table.');
       }
     } catch (e) {
       console.error('Failed to create bill:', e);
+      alert('Network error generating bill.');
     }
   };
 

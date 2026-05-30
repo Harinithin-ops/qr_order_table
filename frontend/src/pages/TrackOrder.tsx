@@ -267,7 +267,7 @@ export default function TrackOrderPage() {
               Enjoy your meal! When you're ready to leave, tap the button below to close your order and pay.
             </p>
             <Link
-              to={`/payment/${orderId}`}
+              to={`/checkout/${order.tableId}`}
               className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] text-sm mt-2"
             >
               <CreditCard size={16} /> Request Bill / Pay Now
@@ -337,7 +337,7 @@ export default function TrackOrderPage() {
       {/* Sticky Bottom Actions */}
       <div className="p-4 bg-white border-t border-gray-150 shadow-lg sticky bottom-0 z-10 flex flex-col gap-2">
         <Link
-          to={`/payment/${orderId}`}
+          to={`/checkout/${order.tableId}`}
           className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition cursor-pointer text-sm"
         >
           <CreditCard size={18} />
