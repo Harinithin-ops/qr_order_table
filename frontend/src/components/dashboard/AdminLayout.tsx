@@ -61,6 +61,12 @@ export default function AdminLayout() {
       badge: null,
     },
     {
+      name: 'Manage Menu',
+      path: '/admin/menu',
+      icon: Utensils,
+      badge: null,
+    },
+    {
       name: 'Table QR Codes',
       path: '/admin/qr',
       icon: QrCode,
