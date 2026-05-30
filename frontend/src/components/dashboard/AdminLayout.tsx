@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, History, QrCode, LogOut, Menu, X, Utensils } from 'lucide-react';
+import { LayoutDashboard, History, QrCode, LogOut, Menu, X, Utensils, Printer } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
 import { useEventSource } from '@/hooks/useEventSource';
 
@@ -73,6 +73,12 @@ export default function AdminLayout() {
       icon: LayoutDashboard,
       badge: activeCount > 0 ? activeCount : null,
       badgeColor: 'bg-green-500 text-white',
+    },
+    {
+      name: 'Bill Machine',
+      path: '/dashboard/bill-machine',
+      icon: Printer,
+      badge: null,
     },
     ...(userRole === 'admin' ? [
       {

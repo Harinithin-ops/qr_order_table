@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import AdminQR from './pages/AdminQR';
 import AdminMenu from './pages/AdminMenu';
+import BillMachine from './pages/BillMachine';
 import AdminLayout from './components/dashboard/AdminLayout';
 import { useEffect, useState } from 'react';
 import { Activity } from 'lucide-react';
@@ -69,6 +70,7 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/bill-machine" element={<BillMachine />} />
           <Route path="/dashboard/history" element={<History />} />
           <Route path="/admin/qr" element={<AdminQR />} />
           <Route path="/admin/menu" element={<AdminMenu />} />
