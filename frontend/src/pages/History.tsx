@@ -30,6 +30,12 @@ export default function BillingHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Merge Mode States
+  const [isMergeMode, setIsMergeMode] = useState(false);
+  const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
+  const [targetMergeId, setTargetMergeId] = useState<string>('');
+  const [merging, setMerging] = useState(false);
+
   useEffect(() => {
     const fetchBills = async () => {
       try {
@@ -79,6 +85,75 @@ export default function BillingHistoryPage() {
     }
   };
 
+  const handleToggleSelectMerge = (id: string) => {
+    setSelectedMergeIds(prev => {
+      if (prev.includes(id)) {
+        const next = prev.filter(x => x !== id);
+        if (next.length < 2) setTargetMergeId('');
+        return next;
+      }
+      if (prev.length >= 2) return prev;
+      const next = [...prev, id];
+      if (next.length === 2) {
+        setTargetMergeId(next[0]);
+      }
+      return next;
+    });
+  };
+
+  const handleExecuteMerge = async () => {
+    if (selectedMergeIds.length !== 2) return;
+    if (!targetMergeId) return;
+
+    const sourceId = selectedMergeIds.find(id => id !== targetMergeId);
+    if (!sourceId) return;
+
+    const sourceBill = bills.find(b => b.id === sourceId);
+    const targetBill = bills.find(b => b.id === targetMergeId);
+
+    if (!sourceBill || !targetBill) return;
+
+    if (!window.confirm(`Are you sure you want to merge Table ${sourceBill.order.table.tableNumber} bill into Table ${targetBill.order.table.tableNumber} bill? This action is permanent, items will be moved, and Table ${sourceBill.order.table.tableNumber} bill will be deleted.`)) {
+      return;
+    }
+
+    setMerging(true);
+    try {
+      const res = await fetch('/api/bills/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceBillId: sourceId,
+          targetBillId: targetMergeId
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updatedBill = data.mergedBill;
+
+        setBills(prev =>
+          prev
+            .filter(b => b.id !== sourceId)
+            .map(b => b.id === targetMergeId ? { ...b, ...updatedBill } : b)
+        );
+
+        setIsMergeMode(false);
+        setSelectedMergeIds([]);
+        setTargetMergeId('');
+        alert('Bills merged successfully!');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to merge bills');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while merging the bills');
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const filteredBills = bills.filter(b => 
     b.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     b.order.table.tableNumber.toString().includes(searchTerm) ||
@@ -99,11 +174,91 @@ export default function BillingHistoryPage() {
           <p className="text-gray-500">View and manage past invoices and completed orders.</p>
         </div>
         
-        <div className="bg-white px-6 py-3 rounded-xl shadow-sm border border-gray-200 text-right">
-           <div className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Total Paid Revenue</div>
-           <div className="text-xl font-bold text-emerald-600">{formatCurrency(totalRevenue)}</div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setIsMergeMode(!isMergeMode);
+              setSelectedMergeIds([]);
+              setTargetMergeId('');
+            }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition shadow-sm ${
+              isMergeMode 
+                ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' 
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {isMergeMode ? 'Cancel Merge' : 'Merge Bills'}
+          </button>
+          
+          <div className="bg-white px-6 py-3 rounded-xl shadow-sm border border-gray-200 text-right">
+             <div className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Total Paid Revenue</div>
+             <div className="text-xl font-bold text-emerald-600">{formatCurrency(totalRevenue)}</div>
+          </div>
         </div>
       </div>
+
+      {isMergeMode && (
+        <div className="mb-6 p-5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl shadow-sm animate-slide-up flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="text-sm text-emerald-950 font-medium">
+            <h3 className="font-bold text-base mb-1">Bill Merge Assistant</h3>
+            {bills.filter(b => b.paymentStatus !== 'PAID').length < 2 ? (
+              <p className="text-amber-700 font-semibold">
+                ⚠️ There are not enough unpaid bills in the system to merge. Please ensure at least two tables have active unpaid bills (status PENDING or AWAITING_CONFIRMATION).
+              </p>
+            ) : selectedMergeIds.length < 2 ? (
+              <p className="text-emerald-700">Select exactly two unpaid bills from the list below ({selectedMergeIds.length}/2 selected).</p>
+            ) : (
+              <div>
+                <p className="mb-2">Choose which table keeps the combined bill:</p>
+                <div className="flex gap-4">
+                  {selectedMergeIds.map(id => {
+                    const bill = bills.find(b => b.id === id);
+                    if (!bill) return null;
+                    return (
+                      <label key={id} className="inline-flex items-center gap-2 cursor-pointer font-bold bg-white px-3 py-2 rounded-lg border border-emerald-200">
+                        <input
+                          type="radio"
+                          name="target-bill-selection"
+                          checked={targetMergeId === id}
+                          onChange={() => setTargetMergeId(id)}
+                          className="text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>Table {bill.order.table.tableNumber} (Bill {bill.billNumber})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex gap-3 shrink-0">
+            <button
+              onClick={() => {
+                setIsMergeMode(false);
+                setSelectedMergeIds([]);
+                setTargetMergeId('');
+              }}
+              className="px-4 py-2 border border-gray-200 rounded-xl bg-white text-gray-700 hover:bg-gray-50 text-sm font-medium transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleExecuteMerge}
+              disabled={selectedMergeIds.length !== 2 || !targetMergeId || merging}
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/10 disabled:opacity-50 transition flex items-center gap-1.5"
+            >
+              {merging ? (
+                <>
+                  <Activity className="animate-spin" size={16} /> Merging...
+                </>
+              ) : (
+                'Execute Merge'
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-4">
@@ -124,6 +279,7 @@ export default function BillingHistoryPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
+                {isMergeMode && <th className="px-6 py-4 font-semibold text-center w-20">Select</th>}
                 <th className="px-6 py-4 font-semibold">Bill No.</th>
                 <th className="px-6 py-4 font-semibold">Date</th>
                 <th className="px-6 py-4 font-semibold">Table</th>
@@ -145,6 +301,21 @@ export default function BillingHistoryPage() {
               ) : (
                 filteredBills.map(bill => (
                   <tr key={bill.id} className="hover:bg-gray-50 transition">
+                    {isMergeMode && (
+                      <td className="px-6 py-4 text-center">
+                        {bill.paymentStatus !== 'PAID' ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedMergeIds.includes(bill.id)}
+                            onChange={() => handleToggleSelectMerge(bill.id)}
+                            disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
+                            className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+                          />
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-6 py-4 font-medium text-gray-900">{bill.billNumber}</td>
                     <td className="px-6 py-4 text-gray-500">{formatDate(bill.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">Table {bill.order.table.tableNumber}</td>
@@ -197,7 +368,19 @@ export default function BillingHistoryPage() {
             </div>
           ) : (
             filteredBills.map(bill => (
-              <div key={bill.id} className="p-4 flex flex-col gap-3">
+              <div key={bill.id} className="p-4 flex flex-col gap-3 relative">
+                {isMergeMode && bill.paymentStatus !== 'PAID' && (
+                  <div className="absolute top-4 right-4 z-10 bg-white/95 p-1 px-2 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1.5 animate-slide-up">
+                    <input
+                      type="checkbox"
+                      checked={selectedMergeIds.includes(bill.id)}
+                      onChange={() => handleToggleSelectMerge(bill.id)}
+                      disabled={selectedMergeIds.length >= 2 && !selectedMergeIds.includes(bill.id)}
+                      className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="text-[10px] font-bold text-emerald-800">Merge</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="font-bold text-gray-900">#{bill.billNumber}</div>

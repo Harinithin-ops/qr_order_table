@@ -23,7 +23,8 @@ import {
   getBillById,
   updateBill,
   payBill,
-  addExtraItemToBill
+  addExtraItemToBill,
+  mergeBills
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 
@@ -85,6 +86,7 @@ app.get('/api/bills/:id', getBillById);
 app.patch('/api/bills/:id', authMiddleware, updateBill);
 app.post('/api/bills/:id/pay', payBill);
 app.post('/api/bills/:id/items', authMiddleware, addExtraItemToBill);
+app.post('/api/bills/merge', authMiddleware, mergeBills);
 
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);

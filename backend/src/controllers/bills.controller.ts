@@ -301,3 +301,114 @@ export async function addExtraItemToBill(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to add extra item' });
   }
 }
+
+export async function mergeBills(req: Request, res: Response) {
+  try {
+    const { sourceBillId, targetBillId } = req.body;
+
+    if (!sourceBillId || !targetBillId || sourceBillId === targetBillId) {
+      return res.status(400).json({ error: 'Valid source and target bill IDs are required' });
+    }
+
+    // Fetch both bills
+    const sourceBill = await prisma.bill.findUnique({
+      where: { id: sourceBillId },
+      include: { order: { include: { items: true } } }
+    });
+
+    const targetBill = await prisma.bill.findUnique({
+      where: { id: targetBillId },
+      include: { order: { include: { items: true } } }
+    });
+
+    if (!sourceBill || !targetBill) {
+      return res.status(404).json({ error: 'Source or target bill not found' });
+    }
+
+    if (sourceBill.paymentStatus === 'PAID' || targetBill.paymentStatus === 'PAID') {
+      return res.status(400).json({ error: 'Cannot merge bills that are already paid' });
+    }
+
+    // Merge in a transaction
+    const updatedTargetBill = await prisma.$transaction(async (tx) => {
+      // 1. Move all order items from source order to target order
+      await tx.orderItem.updateMany({
+        where: { orderId: sourceBill.orderId },
+        data: { orderId: targetBill.orderId }
+      });
+
+      // 2. Combine notes
+      let combinedNotes = targetBill.order.notes || '';
+      if (sourceBill.order.notes) {
+        combinedNotes = combinedNotes 
+          ? `${combinedNotes} | Merged from: ${sourceBill.order.notes}`
+          : `Merged from: ${sourceBill.order.notes}`;
+      }
+
+      // 3. Recalculate totals for target order
+      const allTargetItems = await tx.orderItem.findMany({
+        where: { orderId: targetBill.orderId }
+      });
+
+      const newSubtotal = allTargetItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const newTaxAmount = newSubtotal * TAX_RATE;
+      const newTotal = newSubtotal + newTaxAmount;
+
+      // Update target order
+      await tx.order.update({
+        where: { id: targetBill.orderId },
+        data: { 
+          total: newSubtotal,
+          notes: combinedNotes || null
+        }
+      });
+
+      // Update target bill
+      const updatedBill = await tx.bill.update({
+        where: { id: targetBillId },
+        data: {
+          subtotal: newSubtotal,
+          taxAmount: newTaxAmount,
+          total: newTotal
+        },
+        include: {
+          order: {
+            include: {
+              table: true,
+              items: { include: { menuItem: true } }
+            }
+          }
+        }
+      });
+
+      // 4. Delete source bill and source order
+      await tx.bill.delete({
+        where: { id: sourceBillId }
+      });
+
+      await tx.order.delete({
+        where: { id: sourceBill.orderId }
+      });
+
+      // Notify SSE clients
+      eventEmitter.emit('ORDER_UPDATE', {
+        orderId: targetBill.orderId,
+        status: targetBill.order.status,
+        tableId: targetBill.order.tableId,
+        billId: targetBill.id,
+      });
+
+      return updatedBill;
+    });
+
+    return res.json({ 
+      success: true, 
+      message: 'Bills merged successfully', 
+      mergedBill: updatedTargetBill 
+    });
+  } catch (error) {
+    console.error('Failed to merge bills:', error);
+    return res.status(500).json({ error: 'Failed to merge bills' });
+  }
+}
+
