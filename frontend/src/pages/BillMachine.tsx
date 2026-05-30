@@ -9,10 +9,78 @@ import {
   AlertCircle, 
   Copy, 
   Check, 
-  Sliders 
+  Sliders,
+  Bluetooth
 } from 'lucide-react';
 import { formatCurrency, formatDate, HOTEL_NAME, HOTEL_ADDRESS, HOTEL_PHONE, HOTEL_GST } from '@/lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
+
+// ESC/POS builder helper to construct binary receipt commands for thermal printers
+class EscPosBuilder {
+  private buffer: number[] = [];
+
+  write(text: string) {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(text);
+    this.buffer.push(...Array.from(bytes));
+    return this;
+  }
+
+  writeLine(text: string) {
+    return this.write(text + '\n');
+  }
+
+  alignCenter() {
+    this.buffer.push(0x1B, 0x61, 1);
+    return this;
+  }
+
+  alignLeft() {
+    this.buffer.push(0x1B, 0x61, 0);
+    return this;
+  }
+
+  alignRight() {
+    this.buffer.push(0x1B, 0x61, 2);
+    return this;
+  }
+
+  bold(on: boolean) {
+    this.buffer.push(0x1B, 0x45, on ? 1 : 0);
+    return this;
+  }
+
+  doubleSize(on: boolean) {
+    this.buffer.push(0x1B, 0x21, on ? 0x30 : 0);
+    return this;
+  }
+
+  lineFeed(lines = 1) {
+    this.buffer.push(0x1B, 0x64, lines);
+    return this;
+  }
+
+  cut() {
+    // GS V 66 0
+    this.buffer.push(0x1D, 0x56, 66, 0);
+    return this;
+  }
+
+  getBuffer() {
+    return new Uint8Array(this.buffer);
+  }
+}
+
+// Writes bytes in 20-byte chunks to comply with BLE GATT MTU payload constraints
+const writeDataInChunks = async (characteristic: any, data: Uint8Array) => {
+  const chunkSize = 20;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.slice(i, i + chunkSize);
+    await characteristic.writeValue(chunk);
+    // 15ms buffer delay to clear the BLE write queue
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+};
 
 export default function BillMachinePage() {
   const [bills, setBills] = useState<(BillData & { order: OrderWithItems })[]>([]);
@@ -24,6 +92,151 @@ export default function BillMachinePage() {
   const [showGST, setShowGST] = useState(true);
   const [showQR, setShowQR] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Bluetooth Printer states
+  const [btDevice, setBtDevice] = useState<any>(null);
+  const [btCharacteristic, setBtCharacteristic] = useState<any>(null);
+  const [btConnecting, setBtConnecting] = useState(false);
+  const [btError, setBtError] = useState('');
+
+  const isBluetoothSupported = typeof window !== 'undefined' && 'bluetooth' in (navigator as any);
+
+  const connectBluetooth = async () => {
+    setBtConnecting(true);
+    setBtError('');
+    try {
+      // Prompt standard BLE serial characteristics or accept all
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          '000018f0-0000-1000-8000-00805f9b34fb', // Standard Printer service
+          '0000e7e7-0000-1000-8000-00805f9b34fb', // Custom BLE SPP
+          '49535343-fe7d-4ae5-8fa9-9fafd205e455', // TVS BLE characteristic
+        ]
+      });
+
+      console.log('Connecting to GATT Server...');
+      const server = await device.gatt!.connect();
+
+      console.log('Discovering Services...');
+      const services = await server.getPrimaryServices();
+      
+      let writeChar = null;
+      for (const service of services) {
+        const chars = await service.getCharacteristics();
+        for (const char of chars) {
+          if (char.properties.write || char.properties.writeWithoutResponse) {
+            writeChar = char;
+            break;
+          }
+        }
+        if (writeChar) break;
+      }
+
+      if (!writeChar) {
+        throw new Error('No writable characteristic found on this device. Make sure it is a printer.');
+      }
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setBtDevice(null);
+        setBtCharacteristic(null);
+      });
+
+      setBtDevice(device);
+      setBtCharacteristic(writeChar);
+    } catch (err: any) {
+      console.error(err);
+      setBtError(err.message || 'Failed to connect to printer.');
+    } finally {
+      setBtConnecting(false);
+    }
+  };
+
+  const disconnectBluetooth = () => {
+    if (btDevice && btDevice.gatt.connected) {
+      btDevice.gatt.disconnect();
+    }
+    setBtDevice(null);
+    setBtCharacteristic(null);
+  };
+
+  const printViaBluetooth = async () => {
+    if (!selectedBill || !btCharacteristic) return;
+
+    try {
+      const escpos = new EscPosBuilder();
+      
+      // Receipt compilation
+      escpos.alignCenter();
+      escpos.bold(true);
+      escpos.doubleSize(true);
+      escpos.writeLine(HOTEL_NAME);
+      escpos.doubleSize(false);
+      escpos.bold(false);
+      
+      escpos.writeLine(HOTEL_ADDRESS);
+      escpos.writeLine(`Phone: ${HOTEL_PHONE}`);
+      if (showGST) {
+        escpos.writeLine(`GSTIN: ${HOTEL_GST}`);
+      }
+      
+      escpos.writeLine('--------------------------------');
+      
+      escpos.alignLeft();
+      escpos.writeLine(`BILL NO: ${selectedBill.billNumber}`);
+      escpos.writeLine(`TABLE  : Table ${selectedBill.order.table.tableNumber}`);
+      escpos.writeLine(`DATE   : ${formatDate(selectedBill.createdAt).split(',')[0]}`);
+      escpos.writeLine(`STATUS : ${selectedBill.paymentStatus}`);
+      
+      escpos.writeLine('--------------------------------');
+      escpos.writeLine('QTY  ITEM                 TOTAL');
+      
+      for (const item of selectedBill.order.items) {
+        const qtyStr = String(item.quantity).padEnd(5, ' ');
+        const nameStr = item.menuItem.name.substring(0, 16).padEnd(16, ' ');
+        const totalVal = formatCurrency(item.price * item.quantity).replace('₹', 'Rs ');
+        const totalStr = totalVal.padStart(11, ' ');
+        escpos.writeLine(`${qtyStr}${nameStr}${totalStr}`);
+      }
+      
+      escpos.writeLine('--------------------------------');
+      
+      const formatVal = (label: string, value: number) => {
+        const valStr = formatCurrency(value).replace('₹', 'Rs ');
+        return `${label.padEnd(20, ' ')}${valStr.padStart(12, ' ')}`;
+      };
+      
+      escpos.writeLine(formatVal('Subtotal:', selectedBill.subtotal));
+      if (showGST) {
+        escpos.writeLine(formatVal(`GST (${selectedBill.taxRate * 100}%):`, selectedBill.taxAmount));
+      }
+      if (selectedBill.discount > 0) {
+        escpos.writeLine(formatVal('Discount:', selectedBill.discount));
+      }
+      
+      escpos.bold(true);
+      escpos.writeLine(formatVal('TOTAL:', selectedBill.total));
+      escpos.bold(false);
+      
+      escpos.writeLine('--------------------------------');
+      escpos.alignCenter();
+      escpos.bold(true);
+      escpos.writeLine('THANK YOU! VISIT AGAIN');
+      escpos.bold(false);
+      
+      // Feed paper and cut
+      escpos.lineFeed(4);
+      escpos.cut();
+      
+      const buffer = escpos.getBuffer();
+      await writeDataInChunks(btCharacteristic, buffer);
+      
+      alert('Printed successfully via Bluetooth!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Print failed: ' + (err.message || err));
+    }
+  };
 
   useEffect(() => {
     const fetchBills = async () => {
@@ -116,12 +329,46 @@ export default function BillMachinePage() {
           <p className="text-gray-500 text-sm">Select orders to print professional thermal receipts.</p>
         </div>
 
-        {/* Printer Status */}
-        <div className="flex items-center gap-2.5 bg-white border border-gray-200 px-4 py-2.5 rounded-xl shadow-sm self-start md:self-auto text-sm">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="font-semibold text-gray-700">TVS RP 3230</span>
-          <span className="text-gray-400 font-medium">|</span>
-          <span className="text-gray-500 font-bold text-xs uppercase tracking-wider">Ready (System Printer)</span>
+        {/* Printer Connection Status */}
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {!isBluetoothSupported ? (
+            <div className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-sm">
+              <AlertCircle size={14} /> Bluetooth not supported in this browser
+            </div>
+          ) : btDevice ? (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3.5 py-2 rounded-xl shadow-sm text-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-semibold text-emerald-800">Connected: {btDevice.name || 'BT Printer'}</span>
+              <button 
+                onClick={disconnectBluetooth}
+                className="text-xs font-bold text-red-600 hover:text-red-800 ml-2 hover:underline cursor-pointer"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={connectBluetooth}
+              disabled={btConnecting}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow-md shadow-blue-600/10 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {btConnecting ? (
+                <>
+                  <Activity className="animate-spin" size={16} /> Connecting...
+                </>
+              ) : (
+                <>
+                  <Bluetooth size={16} /> Connect BT Printer
+                </>
+              )}
+            </button>
+          )}
+
+          {btError && (
+            <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 p-2 rounded-lg">
+              {btError}
+            </span>
+          )}
         </div>
       </div>
 
@@ -227,12 +474,21 @@ export default function BillMachinePage() {
               </div>
 
               <div className="border-t border-gray-150 pt-4 space-y-3">
-                <button
-                  onClick={handlePrint}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition-transform"
-                >
-                  <Printer size={18} /> Print Receipt (TVS)
-                </button>
+                {btDevice ? (
+                  <button
+                    onClick={printViaBluetooth}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/10 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    <Bluetooth size={18} /> Print via Bluetooth
+                  </button>
+                ) : (
+                  <button
+                    onClick={handlePrint}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    <Printer size={18} /> Print Receipt (TVS)
+                  </button>
+                )}
 
                 <button
                   onClick={() => copyPayLink(selectedBill.id)}
