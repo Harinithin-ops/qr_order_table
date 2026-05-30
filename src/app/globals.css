@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-green-50: #f4f8e8;
+  --color-green-100: #e5f3aa;
+  --color-green-200: #dced98;
+  --color-green-500: #5c9622;
+  --color-green-600: #4a781b;
+  --color-green-700: #3a5e15;
+  --color-green-800: #2a440f;
+  
+  --color-red-50: #fceae9;
+  --color-red-100: #f8c8c5;
+  --color-red-500: #e54b42;
+  --color-red-600: #dd2a20;
+  --color-red-700: #b0221a;
+  --color-red-800: #851913;
+}
+
+@layer utilities {
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Animations */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.95); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.2s ease-out forwards;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
