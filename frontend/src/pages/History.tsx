@@ -160,7 +160,7 @@ export default function BillingHistoryPage() {
                             onClick={() => handleApprovePayment(bill.id)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition"
                           >
-                            Approve Cash
+                            Bill Paid
                           </button>
                         )}
                         <Link 
@@ -218,7 +218,7 @@ export default function BillingHistoryPage() {
                         onClick={() => handleApprovePayment(bill.id)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition"
                       >
-                        Approve Cash
+                        Bill Paid
                       </button>
                     )}
                     <Link 

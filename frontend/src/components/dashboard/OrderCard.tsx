@@ -93,9 +93,13 @@ export function OrderCard({ order, onUpdateStatus, onRequestBill }: Props) {
           ) : nextStatus ? (
             <button 
               onClick={() => onUpdateStatus(order.id, nextStatus)}
-              className="bg-red-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium hover:bg-red-700 transition whitespace-nowrap shrink-0"
+              className={`${
+                nextStatus === 'PAID' 
+                  ? 'bg-emerald-600 hover:bg-emerald-700' 
+                  : 'bg-red-600 hover:bg-red-700'
+              } text-white px-3 md:px-4 py-1.5 md:py-2 rounded shadow text-xs md:text-sm font-medium transition whitespace-nowrap shrink-0`}
             >
-              Mark {nextStatus}
+              {nextStatus === 'PAID' ? 'Bill Paid' : `Mark ${nextStatus}`}
             </button>
           ) : order.status === 'PAID' ? (
             <span className="text-green-600 font-bold flex items-center gap-1 text-xs md:text-sm whitespace-nowrap"><Check size={14}/> Completed</span>
