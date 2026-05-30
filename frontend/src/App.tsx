@@ -4,6 +4,8 @@ import Login from './pages/Login';
 import Menu from './pages/Menu';
 import Pay from './pages/Pay';
 import Bill from './pages/Bill';
+import TrackOrder from './pages/TrackOrder';
+import Payment from './pages/Payment';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import AdminQR from './pages/AdminQR';
@@ -57,6 +59,8 @@ export default function App() {
         <Route path="/menu/:tableId" element={<Menu />} />
         <Route path="/pay/:billId" element={<Pay />} />
         <Route path="/bill/:id" element={<Bill />} />
+        <Route path="/track/:orderId" element={<TrackOrder />} />
+        <Route path="/payment/:orderId" element={<Payment />} />
 
         {/* Admin Login Route */}
         <Route path="/login" element={<Login />} />

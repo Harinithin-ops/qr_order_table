@@ -1,16 +1,16 @@
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { MenuItemWithCategory } from '@/types';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { MenuItemWithCategory, OrderWithItems } from '@/types';
 import { CategoryTabs } from '@/components/menu/CategoryTabs';
 import { MenuItemCard } from '@/components/menu/MenuItemCard';
 import { CartButton } from '@/components/menu/CartButton';
 import { CartSheet } from '@/components/menu/CartSheet';
 import { SmartSuggestions } from '@/components/menu/SmartSuggestions';
 import { WaiterCallButton } from '@/components/menu/WaiterCallButton';
-import { OrderTracker } from '@/components/menu/OrderTracker';
 import { CartProvider } from '@/hooks/useCart';
-import { HOTEL_NAME } from '@/lib/utils';
-import { UtensilsCrossed, Search, X, User, Edit2 } from 'lucide-react';
+import { useEventSource } from '@/hooks/useEventSource';
+import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
+import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -185,13 +185,9 @@ export default function MenuPage() {
         />
 
         <div className="p-3" ref={itemListRef}>
-          {/* Active Order Tracker */}
+          {/* Active Order Banner */}
           {orderId && (
-            <OrderTracker
-              orderId={orderId}
-              tableId={tableId}
-              onCompleted={handleOrderCompleted}
-            />
+            <ActiveOrderBanner orderId={orderId} tableId={tableId} onCompleted={handleOrderCompleted} />
           )}
 
           {/* Search Bar */}
@@ -302,6 +298,93 @@ export default function MenuPage() {
         />
       </main>
     </CartProvider>
+  );
+}
+
+/** Minimal sticky banner shown at top of menu listing when an order is active */
+function ActiveOrderBanner({
+  orderId,
+  tableId,
+  onCompleted,
+}: {
+  orderId: string;
+  tableId: string;
+  onCompleted?: () => void;
+}) {
+  const [order, setOrder] = useState<OrderWithItems | null>(null);
+  const { lastEvent } = useEventSource('/api/events');
+
+  const fetchOrder = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setOrder(data);
+        // Auto-clear after paid
+        if (data.status === 'PAID' && onCompleted) {
+          const t = setTimeout(() => onCompleted(), 3000);
+          return () => clearTimeout(t);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [orderId, onCompleted]);
+
+  useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  useEffect(() => {
+    if (lastEvent?.type !== 'ORDER_UPDATE') return;
+    const payload = lastEvent.data as { orderId?: string };
+    if (payload.orderId !== orderId) return;
+    setTimeout(() => fetchOrder(), 500);
+  }, [lastEvent, orderId, fetchOrder]);
+
+  if (!order || order.status === 'PAID') return null;
+
+  const statusIcon = () => {
+    switch (order.status) {
+      case 'PLACED': return <Clock size={14} className="animate-pulse" />;
+      case 'PREPARING': return <ChefHat size={14} />;
+      case 'READY': case 'SERVED': return <CheckCircle2 size={14} className="text-green-500" />;
+      case 'PENDING': return <CreditCard size={14} className="text-red-500" />;
+      default: return <Clock size={14} />;
+    }
+  };
+
+  const bannerColor = {
+    PLACED: 'border-yellow-200 bg-yellow-50',
+    ACCEPTED: 'border-blue-200 bg-blue-50',
+    PREPARING: 'border-green-200 bg-green-50',
+    READY: 'border-green-300 bg-green-100',
+    SERVED: 'border-purple-200 bg-purple-50',
+    PENDING: 'border-red-200 bg-red-50',
+  }[order.status] || 'border-gray-200 bg-gray-50';
+
+  return (
+    <div className={`mb-4 rounded-xl border-2 ${bannerColor} p-3 flex items-center gap-3 shadow-sm animate-slide-up`}>
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {statusIcon()}
+        <div className="min-w-0">
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Active Order</p>
+          <p className="text-xs font-extrabold text-gray-800 truncate">{getStatusLabel(order.status)}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Link
+          to={`/track/${orderId}`}
+          className="text-[10px] font-bold bg-white border border-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg hover:bg-gray-50 transition active:scale-95 shadow-sm"
+        >
+          Track
+        </Link>
+        <Link
+          to={`/payment/${orderId}`}
+          className="text-[10px] font-bold bg-red-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-red-700 transition active:scale-95 shadow-sm"
+        >
+          Pay Bill
+        </Link>
+      </div>
+    </div>
   );
 }
 
