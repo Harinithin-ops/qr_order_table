@@ -12,10 +12,17 @@ interface BillHistoryItem {
   paymentReference: string | null;
   createdAt: string;
   order: {
+    notes: string | null;
     table: {
       tableNumber: number;
     };
   };
+}
+
+function getCustomerName(notes: string | null): string {
+  if (!notes) return 'Guest';
+  const match = notes.match(/^Name:\s*([^|]+)/);
+  return match ? match[1].trim() : 'Guest';
 }
 
 export default function BillingHistoryPage() {
@@ -74,7 +81,8 @@ export default function BillingHistoryPage() {
 
   const filteredBills = bills.filter(b => 
     b.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b.order.table.tableNumber.toString().includes(searchTerm)
+    b.order.table.tableNumber.toString().includes(searchTerm) ||
+    getCustomerName(b.order.notes).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totalRevenue = bills.filter(b => b.paymentStatus === 'PAID').reduce((acc, curr) => acc + curr.total, 0);
@@ -119,6 +127,7 @@ export default function BillingHistoryPage() {
                 <th className="px-6 py-4 font-semibold">Bill No.</th>
                 <th className="px-6 py-4 font-semibold">Date</th>
                 <th className="px-6 py-4 font-semibold">Table</th>
+                <th className="px-6 py-4 font-semibold">Customer</th>
                 <th className="px-6 py-4 font-semibold text-right">Amount</th>
                 <th className="px-6 py-4 font-semibold text-center">Status</th>
                 <th className="px-6 py-4 font-semibold text-center">Method</th>
@@ -139,6 +148,7 @@ export default function BillingHistoryPage() {
                     <td className="px-6 py-4 font-medium text-gray-900">{bill.billNumber}</td>
                     <td className="px-6 py-4 text-gray-500">{formatDate(bill.createdAt)}</td>
                     <td className="px-6 py-4 font-medium">Table {bill.order.table.tableNumber}</td>
+                    <td className="px-6 py-4 font-medium text-gray-700">{getCustomerName(bill.order.notes)}</td>
                     <td className="px-6 py-4 font-bold text-right">{formatCurrency(bill.total)}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -200,7 +210,12 @@ export default function BillingHistoryPage() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <div className="font-medium text-gray-700">Table {bill.order.table.tableNumber}</div>
+                  <div className="font-medium text-gray-700">
+                    Table {bill.order.table.tableNumber}
+                    <span className="text-xs text-gray-400 font-normal ml-1.5">
+                      ({getCustomerName(bill.order.notes)})
+                    </span>
+                  </div>
                   <div className="font-bold text-gray-900">{formatCurrency(bill.total)}</div>
                 </div>
                 <div className="flex justify-between items-end">
