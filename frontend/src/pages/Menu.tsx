@@ -20,7 +20,8 @@ export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [orderId, setOrderId] = useState<string | null>(null);
+  // Track MULTIPLE concurrent orders (e.g. first round + second round)
+  const [orderIds, setOrderIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [inputName, setInputName] = useState('');
@@ -37,8 +38,21 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedOrderId = sessionStorage.getItem(`kh_order_${tableId}`);
-      if (savedOrderId) setOrderId(savedOrderId);
+      // Support array of order IDs stored as JSON for multiple concurrent orders
+      const raw = sessionStorage.getItem(`kh_orders_${tableId}`);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setOrderIds(parsed);
+        } catch {
+          // Legacy single-id fallback
+          setOrderIds([raw]);
+        }
+      } else {
+        // Also try legacy single-order key for backward compat
+        const legacySingle = sessionStorage.getItem(`kh_order_${tableId}`);
+        if (legacySingle) setOrderIds([legacySingle]);
+      }
     }
 
     const fetchMenu = async () => {
@@ -71,13 +85,20 @@ export default function MenuPage() {
   };
 
   const handleOrderPlaced = (newOrderId: string) => {
-    setOrderId(newOrderId);
-    sessionStorage.setItem(`kh_order_${tableId}`, newOrderId);
+    setOrderIds(prev => {
+      const updated = prev.includes(newOrderId) ? prev : [...prev, newOrderId];
+      sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const handleOrderCompleted = () => {
-    setOrderId(null);
-    sessionStorage.removeItem(`kh_order_${tableId}`);
+  // Remove a specific completed order from the list
+  const handleOrderCompleted = (completedOrderId: string) => {
+    setOrderIds(prev => {
+      const updated = prev.filter(id => id !== completedOrderId);
+      sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Items for the active category shown first, rest grouped below
@@ -185,9 +206,20 @@ export default function MenuPage() {
         />
 
         <div className="p-3" ref={itemListRef}>
-          {/* Active Order Banner */}
-          {orderId && (
-            <ActiveOrderBanner orderId={orderId} tableId={tableId} onCompleted={handleOrderCompleted} />
+          {/* Active Order Banners — one per concurrent order */}
+          {orderIds.length > 0 && (
+            <div className="space-y-2 mb-2">
+              {orderIds.map((oid, idx) => (
+                <ActiveOrderBanner
+                  key={oid}
+                  orderId={oid}
+                  orderIndex={idx + 1}
+                  totalOrders={orderIds.length}
+                  tableId={tableId}
+                  onCompleted={() => handleOrderCompleted(oid)}
+                />
+              ))}
+            </div>
           )}
 
           {/* Search Bar */}
@@ -304,10 +336,14 @@ export default function MenuPage() {
 /** Minimal sticky banner shown at top of menu listing when an order is active */
 function ActiveOrderBanner({
   orderId,
+  orderIndex,
+  totalOrders,
   tableId,
   onCompleted,
 }: {
   orderId: string;
+  orderIndex?: number;
+  totalOrders?: number;
   tableId: string;
   onCompleted?: () => void;
 }) {
@@ -361,13 +397,23 @@ function ActiveOrderBanner({
     PENDING: 'border-red-200 bg-red-50',
   }[order.status] || 'border-gray-200 bg-gray-50';
 
+  const showIndex = totalOrders && totalOrders > 1 && orderIndex;
+
   return (
-    <div className={`mb-4 rounded-xl border-2 ${bannerColor} p-3 flex items-center gap-3 shadow-sm animate-slide-up`}>
+    <div className={`rounded-xl border-2 ${bannerColor} p-3 flex items-center gap-3 shadow-sm animate-slide-up`}>
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
         {statusIcon()}
         <div className="min-w-0">
-          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Active Order</p>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+            {showIndex ? `Order #${orderIndex}` : 'Active Order'}
+          </p>
           <p className="text-xs font-extrabold text-gray-800 truncate">{getStatusLabel(order.status)}</p>
+          {order.items.length > 0 && (
+            <p className="text-[10px] text-gray-400 truncate mt-0.5">
+              {order.items.slice(0, 2).map(i => i.menuItem.name).join(', ')}
+              {order.items.length > 2 ? ` +${order.items.length - 2} more` : ''}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
