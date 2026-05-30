@@ -10,7 +10,7 @@ import { WaiterCallButton } from '@/components/menu/WaiterCallButton';
 import { OrderTracker } from '@/components/menu/OrderTracker';
 import { CartProvider } from '@/hooks/useCart';
 import { HOTEL_NAME } from '@/lib/utils';
-import { UtensilsCrossed } from 'lucide-react';
+import { UtensilsCrossed, Search, X } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -21,6 +21,7 @@ export default function MenuPage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Ref to scroll the item list back to top on category switch
   const itemListRef = useRef<HTMLDivElement>(null);
@@ -112,41 +113,102 @@ export default function MenuPage() {
             />
           )}
 
-          {/* Smart Suggestions */}
-          <SmartSuggestions menuItems={menuItems} />
+          {/* Search Bar */}
+          <div className="relative mb-4 mt-1 animate-slide-up">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search dishes..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 text-xs shadow-sm transition"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-lg hover:bg-gray-100 transition"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
 
-          {/* Active Category — shown at top, full list */}
-          {activeCategory_ && activeItems.length > 0 && (
+          {searchTerm ? (
+            // Search Results
             <div className="mt-2 animate-slide-up">
-              <div className="flex items-center gap-2 mb-2 px-1">
+              <div className="flex items-center justify-between mb-2 px-1">
                 <span className="text-xs font-bold text-green-600 uppercase tracking-widest">
-                  {activeCategory_.name}
+                  Search Results
                 </span>
                 <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full font-medium">
-                  {activeItems.length} items
+                  {menuItems.filter(item => 
+                    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    item.description.toLowerCase().includes(searchTerm.toLowerCase())
+                  ).length} found
                 </span>
               </div>
-              <div className="bg-white rounded-xl shadow-sm border border-green-100 px-3">
-                {activeItems.map((item) => (
-                  <MenuItemCard key={item.id} item={item} />
-                ))}
-              </div>
+              {(() => {
+                const results = menuItems.filter(item => 
+                  item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  item.description.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+                if (results.length === 0) {
+                  return (
+                    <div className="bg-white rounded-xl p-10 text-center border border-dashed border-gray-300">
+                      <p className="text-gray-400 text-sm">No dishes match "{searchTerm}"</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-white rounded-xl shadow-sm border border-green-50 px-3">
+                    {results.map((item) => (
+                      <MenuItemCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
-          )}
+          ) : (
+            // Normal Categorized View
+            <>
+              {/* Smart Suggestions */}
+              <SmartSuggestions menuItems={menuItems} />
 
-          {/* Other Categories — collapsed/listed below */}
-          {otherCategories.map((category) => {
-            const catItems = menuItems.filter((item) => item.categoryId === category.id);
-            if (catItems.length === 0) return null;
-            return (
-              <OtherCategorySection
-                key={category.id}
-                category={category}
-                items={catItems}
-                onSelect={() => handleSelectCategory(category.id)}
-              />
-            );
-          })}
+              {/* Active Category — shown at top, full list */}
+              {activeCategory_ && activeItems.length > 0 && (
+                <div className="mt-2 animate-slide-up">
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <span className="text-xs font-bold text-green-600 uppercase tracking-widest">
+                      {activeCategory_.name}
+                    </span>
+                    <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full font-medium">
+                      {activeItems.length} items
+                    </span>
+                  </div>
+                  <div className="bg-white rounded-xl shadow-sm border border-green-100 px-3">
+                    {activeItems.map((item) => (
+                      <MenuItemCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Other Categories — collapsed/listed below */}
+              {otherCategories.map((category) => {
+                const catItems = menuItems.filter((item) => item.categoryId === category.id);
+                if (catItems.length === 0) return null;
+                return (
+                  <OtherCategorySection
+                    key={category.id}
+                    category={category}
+                    items={catItems}
+                    onSelect={() => handleSelectCategory(category.id)}
+                  />
+                );
+              })}
+            </>
+          )}
         </div>
 
         <WaiterCallButton tableId={tableId} />
