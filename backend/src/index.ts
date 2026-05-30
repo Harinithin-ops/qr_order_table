@@ -42,6 +42,14 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+// URL Rewriter middleware to handle Vercel routePrefix
+app.use((req, res, next) => {
+  if (req.url.startsWith('/_/backend')) {
+    req.url = req.url.replace('/_/backend', '');
+  }
+  next();
+});
+
 // Auth
 app.post('/api/auth/login', login);
 app.post('/api/auth/logout', logout);
