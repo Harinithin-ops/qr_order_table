@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { OrderWithItems } from '@/types';
 import { useEventSource } from '@/hooks/useEventSource';
-import { formatCurrency, formatDate, HOTEL_NAME, getStatusColor, ORDER_FLOW } from '@/lib/utils';
+import { formatCurrency, HOTEL_NAME, ORDER_FLOW } from '@/lib/utils';
 import { 
   ArrowLeft, 
   Clock, 
@@ -12,7 +12,9 @@ import {
   DollarSign, 
   Receipt, 
   Utensils, 
-  CreditCard 
+  CreditCard,
+  HandPlatter,
+  PartyPopper
 } from 'lucide-react';
 
 export default function TrackOrderPage() {
@@ -20,6 +22,8 @@ export default function TrackOrderPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<OrderWithItems | null>(null);
   const [loading, setLoading] = useState(true);
+  const [markingReceived, setMarkingReceived] = useState(false);
+  const [markReceivedError, setMarkReceivedError] = useState('');
   
   // Realtime updates via Server-Sent Events
   const { lastEvent } = useEventSource('/api/events');
@@ -54,6 +58,29 @@ export default function TrackOrderPage() {
     }, 500);
     return () => clearTimeout(timer);
   }, [lastEvent, orderId, fetchOrder]);
+
+  const handleMarkReceived = async () => {
+    if (!orderId || !order) return;
+    setMarkReceivedError('');
+    setMarkingReceived(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/mark-received`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableId: order.tableId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMarkReceivedError(typeof data.error === 'string' ? data.error : 'Could not update. Try again.');
+        return;
+      }
+      await fetchOrder();
+    } catch {
+      setMarkReceivedError('Network error. Please try again.');
+    } finally {
+      setMarkingReceived(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -201,6 +228,50 @@ export default function TrackOrderPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* READY — Ask customer to confirm order received */}
+        {order.status === 'READY' && (
+          <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 text-center shadow-sm animate-slide-up space-y-3">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto text-green-600">
+              <HandPlatter size={24} />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-gray-900 text-sm">Has your food been brought to the table?</h4>
+              <p className="text-xs text-gray-500 mt-1 px-2">Tap below once your order has been delivered to you.</p>
+            </div>
+            {markReceivedError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded-lg">{markReceivedError}</p>
+            )}
+            <button
+              type="button"
+              disabled={markingReceived}
+              onClick={handleMarkReceived}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-extrabold py-3.5 rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-md shadow-green-600/20 disabled:opacity-60"
+            >
+              <HandPlatter size={18} />
+              {markingReceived ? 'Saving…' : "Yes, I've received my order"}
+            </button>
+          </div>
+        )}
+
+        {/* SERVED — Celebration / enjoyed message */}
+        {order.status === 'SERVED' && (
+          <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-5 text-center shadow-sm animate-slide-up space-y-2">
+            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto text-purple-600">
+              <PartyPopper size={24} />
+            </div>
+            <h4 className="font-extrabold text-gray-900 text-sm">Item Served! 🎉</h4>
+            <p className="text-xs text-gray-500 px-2 leading-relaxed">
+              Enjoy your meal! When you're ready to leave, tap the button below to close your order and pay.
+            </p>
+            <Link
+              to={`/payment/${orderId}`}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] text-sm mt-2"
+            >
+              <CreditCard size={16} /> Request Bill / Pay Now
+            </Link>
           </div>
         )}
 
