@@ -59,7 +59,7 @@ export default function BillingHistoryPage() {
       if (res.ok) {
         setBills(prev =>
           prev.map(b =>
-            b.id === billId ? { ...b, paymentStatus: 'PAID' } : b
+            b.id === billId ? { ...b, paymentStatus: 'PAID', paymentMethod: 'CASH' } : b
           )
         );
       } else {
@@ -155,7 +155,7 @@ export default function BillingHistoryPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {bill.paymentStatus !== 'PAID' && bill.paymentMethod === 'CASH' && (
+                        {bill.paymentStatus !== 'PAID' && (
                           <button
                             onClick={() => handleApprovePayment(bill.id)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition"
@@ -213,7 +213,7 @@ export default function BillingHistoryPage() {
                     ) : '-'}
                   </div>
                   <div className="flex gap-2">
-                    {bill.paymentStatus !== 'PAID' && bill.paymentMethod === 'CASH' && (
+                    {bill.paymentStatus !== 'PAID' && (
                       <button
                         onClick={() => handleApprovePayment(bill.id)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition"
