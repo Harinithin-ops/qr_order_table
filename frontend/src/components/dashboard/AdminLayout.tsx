@@ -7,6 +7,7 @@ import { useEventSource } from '@/hooks/useEventSource';
 export default function AdminLayout() {
   const [activeCount, setActiveCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<string>('admin');
   const { lastEvent } = useEventSource('/api/events');
   const location = useLocation();
   const navigate = useNavigate();
@@ -24,9 +25,28 @@ export default function AdminLayout() {
     }
   };
 
+  const fetchUserRole = async () => {
+    try {
+      const res = await fetch('/api/auth/check');
+      if (res.ok) {
+        const data = await res.json();
+        setUserRole(data.username || 'admin');
+      }
+    } catch (e) {
+      console.error('Failed to fetch user role:', e);
+    }
+  };
+
   useEffect(() => {
     fetchActiveCount();
+    fetchUserRole();
   }, []);
+
+  useEffect(() => {
+    if (userRole === 'server' && ['/dashboard/history', '/admin/menu', '/admin/qr'].includes(location.pathname)) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [userRole, location.pathname, navigate]);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -54,24 +74,26 @@ export default function AdminLayout() {
       badge: activeCount > 0 ? activeCount : null,
       badgeColor: 'bg-green-500 text-white',
     },
-    {
-      name: 'Billing History',
-      path: '/dashboard/history',
-      icon: History,
-      badge: null,
-    },
-    {
-      name: 'Manage Menu',
-      path: '/admin/menu',
-      icon: Utensils,
-      badge: null,
-    },
-    {
-      name: 'Table QR Codes',
-      path: '/admin/qr',
-      icon: QrCode,
-      badge: null,
-    },
+    ...(userRole === 'admin' ? [
+      {
+        name: 'Billing History',
+        path: '/dashboard/history',
+        icon: History,
+        badge: null,
+      },
+      {
+        name: 'Manage Menu',
+        path: '/admin/menu',
+        icon: Utensils,
+        badge: null,
+      },
+      {
+        name: 'Table QR Codes',
+        path: '/admin/qr',
+        icon: QrCode,
+        badge: null,
+      },
+    ] : []),
   ];
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
@@ -158,11 +180,15 @@ export default function AdminLayout() {
           <div className="flex items-center justify-between px-3 py-3 rounded-xl bg-gray-900/40 border border-gray-900 mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center font-bold text-xs text-red-500 uppercase">
-                AD
+                {userRole === 'admin' ? 'AD' : 'SV'}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-gray-200 truncate">Administrator</p>
-                <p className="text-[10px] text-gray-500 truncate">Staff account</p>
+                <p className="text-xs font-semibold text-gray-200 truncate">
+                  {userRole === 'admin' ? 'Administrator' : 'Server Staff'}
+                </p>
+                <p className="text-[10px] text-gray-500 truncate">
+                  {userRole === 'admin' ? 'Super Admin' : 'Order Prep Staff'}
+                </p>
               </div>
             </div>
           </div>

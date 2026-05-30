@@ -37,6 +37,13 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
   next();
 }
 
+export function adminOnly(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.username !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+  next();
+}
+
 export function generateToken(username: string): string {
   const payload = `${username}:${Date.now()}:${AUTH_TOKEN_SECRET}`;
   return Buffer.from(payload).toString('base64');

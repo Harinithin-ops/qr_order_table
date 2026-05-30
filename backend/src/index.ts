@@ -29,7 +29,7 @@ import {
 import { getEvents } from './controllers/events.controller.js';
 
 // Middleware
-import { authMiddleware } from './middleware/auth.middleware.js';
+import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -58,12 +58,12 @@ app.get('/api/auth/check', authMiddleware, checkAuth);
 
 // Menu
 app.get('/api/menu', getMenu);
-app.patch('/api/menu/:id', authMiddleware, updateMenuItem);
+app.patch('/api/menu/:id', authMiddleware, adminOnly, updateMenuItem);
 
 // Tables
 app.get('/api/tables', getTables);
-app.post('/api/tables', authMiddleware, createTable);
-app.delete('/api/tables/:id', authMiddleware, deleteTable);
+app.post('/api/tables', authMiddleware, adminOnly, createTable);
+app.delete('/api/tables/:id', authMiddleware, adminOnly, deleteTable);
 app.post('/api/tables/:id/call-waiter', callWaiter);
 app.delete('/api/tables/:id/call-waiter', dismissWaiter);
 app.get('/api/qr/:id', getTableQR);
@@ -80,13 +80,13 @@ app.post('/api/orders/:id/generate-bill', generateBillForOrder);
 app.post('/api/orders/:id/cancel', cancelOrder);
 
 // Bills
-app.post('/api/bills', authMiddleware, createBill);
-app.get('/api/bills', authMiddleware, getBills);
+app.post('/api/bills', authMiddleware, adminOnly, createBill);
+app.get('/api/bills', authMiddleware, adminOnly, getBills);
 app.get('/api/bills/:id', getBillById);
-app.patch('/api/bills/:id', authMiddleware, updateBill);
+app.patch('/api/bills/:id', authMiddleware, adminOnly, updateBill);
 app.post('/api/bills/:id/pay', payBill);
-app.post('/api/bills/:id/items', authMiddleware, addExtraItemToBill);
-app.post('/api/bills/merge', authMiddleware, mergeBills);
+app.post('/api/bills/:id/items', authMiddleware, adminOnly, addExtraItemToBill);
+app.post('/api/bills/merge', authMiddleware, adminOnly, mergeBills);
 
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);

@@ -1,13 +1,19 @@
 import { Request, Response } from 'express';
-import { generateToken, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
+import { AuthenticatedRequest, generateToken, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'kavitha2024';
 
+const SERVER_USERNAME = process.env.SERVER_USERNAME || 'server';
+const SERVER_PASSWORD = process.env.SERVER_PASSWORD || 'server2024';
+
 export function login(req: Request, res: Response) {
   const { username, password } = req.body;
 
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+  if (
+    (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) ||
+    (username === SERVER_USERNAME && password === SERVER_PASSWORD)
+  ) {
     const token = generateToken(username);
     
     res.cookie(AUTH_COOKIE_NAME, token, {
@@ -18,7 +24,7 @@ export function login(req: Request, res: Response) {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    return res.json({ success: true });
+    return res.json({ success: true, role: username });
   }
 
   return res.status(401).json({ error: 'Invalid credentials' });
@@ -29,6 +35,6 @@ export function logout(req: Request, res: Response) {
   return res.json({ success: true });
 }
 
-export function checkAuth(req: Request, res: Response) {
-  return res.json({ authenticated: true });
+export function checkAuth(req: AuthenticatedRequest, res: Response) {
+  return res.json({ authenticated: true, username: req.username });
 }
