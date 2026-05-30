@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 // Controllers
 import { login, logout, checkAuth } from './controllers/auth.controller.js';
 import { getMenu } from './controllers/menu.controller.js';
-import { getTables, callWaiter, dismissWaiter, getTableQR } from './controllers/tables.controller.js';
+import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable } from './controllers/tables.controller.js';
 import {
   createOrder,
   getOrders,
@@ -60,6 +60,8 @@ app.get('/api/menu', getMenu);
 
 // Tables
 app.get('/api/tables', getTables);
+app.post('/api/tables', authMiddleware, createTable);
+app.delete('/api/tables/:id', authMiddleware, deleteTable);
 app.post('/api/tables/:id/call-waiter', callWaiter);
 app.delete('/api/tables/:id/call-waiter', dismissWaiter);
 app.get('/api/qr/:id', getTableQR);
