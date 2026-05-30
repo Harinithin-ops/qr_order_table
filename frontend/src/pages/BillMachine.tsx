@@ -10,7 +10,8 @@ import {
   Copy, 
   Check, 
   Sliders,
-  Bluetooth
+  Bluetooth,
+  Usb
 } from 'lucide-react';
 import { formatCurrency, formatDate, HOTEL_NAME, HOTEL_ADDRESS, HOTEL_PHONE, HOTEL_GST } from '@/lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
@@ -82,6 +83,73 @@ const writeDataInChunks = async (characteristic: any, data: Uint8Array) => {
   }
 };
 
+// Compiles ESC/POS commands into a single buffer
+const compileReceipt = (bill: any, showGST: boolean): Uint8Array => {
+  const escpos = new EscPosBuilder();
+  
+  escpos.alignCenter();
+  escpos.bold(true);
+  escpos.doubleSize(true);
+  escpos.writeLine(HOTEL_NAME);
+  escpos.doubleSize(false);
+  escpos.bold(false);
+  
+  escpos.writeLine(HOTEL_ADDRESS);
+  escpos.writeLine(`Phone: ${HOTEL_PHONE}`);
+  if (showGST) {
+    escpos.writeLine(`GSTIN: ${HOTEL_GST}`);
+  }
+  
+  escpos.writeLine('--------------------------------');
+  
+  escpos.alignLeft();
+  escpos.writeLine(`BILL NO: ${bill.billNumber}`);
+  escpos.writeLine(`TABLE  : Table ${bill.order.table.tableNumber}`);
+  escpos.writeLine(`DATE   : ${formatDate(bill.createdAt).split(',')[0]}`);
+  escpos.writeLine(`STATUS : ${bill.paymentStatus}`);
+  
+  escpos.writeLine('--------------------------------');
+  escpos.writeLine('QTY  ITEM                 TOTAL');
+  
+  for (const item of bill.order.items) {
+    const qtyStr = String(item.quantity).padEnd(5, ' ');
+    const nameStr = item.menuItem.name.substring(0, 16).padEnd(16, ' ');
+    const totalVal = formatCurrency(item.price * item.quantity).replace('₹', 'Rs ');
+    const totalStr = totalVal.padStart(11, ' ');
+    escpos.writeLine(`${qtyStr}${nameStr}${totalStr}`);
+  }
+  
+  escpos.writeLine('--------------------------------');
+  
+  const formatVal = (label: string, value: number) => {
+    const valStr = formatCurrency(value).replace('₹', 'Rs ');
+    return `${label.padEnd(20, ' ')}${valStr.padStart(12, ' ')}`;
+  };
+  
+  escpos.writeLine(formatVal('Subtotal:', bill.subtotal));
+  if (showGST) {
+    escpos.writeLine(formatVal(`GST (${bill.taxRate * 100}%):`, bill.taxAmount));
+  }
+  if (bill.discount > 0) {
+    escpos.writeLine(formatVal('Discount:', bill.discount));
+  }
+  
+  escpos.bold(true);
+  escpos.writeLine(formatVal('TOTAL:', bill.total));
+  escpos.bold(false);
+  
+  escpos.writeLine('--------------------------------');
+  escpos.alignCenter();
+  escpos.bold(true);
+  escpos.writeLine('THANK YOU! VISIT AGAIN');
+  escpos.bold(false);
+  
+  escpos.lineFeed(4);
+  escpos.cut();
+  
+  return escpos.getBuffer();
+};
+
 export default function BillMachinePage() {
   const [bills, setBills] = useState<(BillData & { order: OrderWithItems })[]>([]);
   const [selectedBill, setSelectedBill] = useState<(BillData & { order: OrderWithItems }) | null>(null);
@@ -99,7 +167,15 @@ export default function BillMachinePage() {
   const [btConnecting, setBtConnecting] = useState(false);
   const [btError, setBtError] = useState('');
 
+  // USB Printer states
+  const [usbDevice, setUsbDevice] = useState<any>(null);
+  const [usbEndpoint, setUsbEndpoint] = useState<any>(null);
+  const [usbInterfaceNumber, setUsbInterfaceNumber] = useState<number | null>(null);
+  const [usbConnecting, setUsbConnecting] = useState(false);
+  const [usbError, setUsbError] = useState('');
+
   const isBluetoothSupported = typeof window !== 'undefined' && 'bluetooth' in (navigator as any);
+  const isUsbSupported = typeof window !== 'undefined' && 'usb' in (navigator as any);
 
   const connectBluetooth = async () => {
     setBtConnecting(true);
@@ -164,79 +240,110 @@ export default function BillMachinePage() {
     if (!selectedBill || !btCharacteristic) return;
 
     try {
-      const escpos = new EscPosBuilder();
-      
-      // Receipt compilation
-      escpos.alignCenter();
-      escpos.bold(true);
-      escpos.doubleSize(true);
-      escpos.writeLine(HOTEL_NAME);
-      escpos.doubleSize(false);
-      escpos.bold(false);
-      
-      escpos.writeLine(HOTEL_ADDRESS);
-      escpos.writeLine(`Phone: ${HOTEL_PHONE}`);
-      if (showGST) {
-        escpos.writeLine(`GSTIN: ${HOTEL_GST}`);
-      }
-      
-      escpos.writeLine('--------------------------------');
-      
-      escpos.alignLeft();
-      escpos.writeLine(`BILL NO: ${selectedBill.billNumber}`);
-      escpos.writeLine(`TABLE  : Table ${selectedBill.order.table.tableNumber}`);
-      escpos.writeLine(`DATE   : ${formatDate(selectedBill.createdAt).split(',')[0]}`);
-      escpos.writeLine(`STATUS : ${selectedBill.paymentStatus}`);
-      
-      escpos.writeLine('--------------------------------');
-      escpos.writeLine('QTY  ITEM                 TOTAL');
-      
-      for (const item of selectedBill.order.items) {
-        const qtyStr = String(item.quantity).padEnd(5, ' ');
-        const nameStr = item.menuItem.name.substring(0, 16).padEnd(16, ' ');
-        const totalVal = formatCurrency(item.price * item.quantity).replace('₹', 'Rs ');
-        const totalStr = totalVal.padStart(11, ' ');
-        escpos.writeLine(`${qtyStr}${nameStr}${totalStr}`);
-      }
-      
-      escpos.writeLine('--------------------------------');
-      
-      const formatVal = (label: string, value: number) => {
-        const valStr = formatCurrency(value).replace('₹', 'Rs ');
-        return `${label.padEnd(20, ' ')}${valStr.padStart(12, ' ')}`;
-      };
-      
-      escpos.writeLine(formatVal('Subtotal:', selectedBill.subtotal));
-      if (showGST) {
-        escpos.writeLine(formatVal(`GST (${selectedBill.taxRate * 100}%):`, selectedBill.taxAmount));
-      }
-      if (selectedBill.discount > 0) {
-        escpos.writeLine(formatVal('Discount:', selectedBill.discount));
-      }
-      
-      escpos.bold(true);
-      escpos.writeLine(formatVal('TOTAL:', selectedBill.total));
-      escpos.bold(false);
-      
-      escpos.writeLine('--------------------------------');
-      escpos.alignCenter();
-      escpos.bold(true);
-      escpos.writeLine('THANK YOU! VISIT AGAIN');
-      escpos.bold(false);
-      
-      // Feed paper and cut
-      escpos.lineFeed(4);
-      escpos.cut();
-      
-      const buffer = escpos.getBuffer();
+      const buffer = compileReceipt(selectedBill, showGST);
       await writeDataInChunks(btCharacteristic, buffer);
-      
       alert('Printed successfully via Bluetooth!');
     } catch (err: any) {
       console.error(err);
       alert('Print failed: ' + (err.message || err));
     }
   };
+
+  const connectUsb = async () => {
+    setUsbConnecting(true);
+    setUsbError('');
+    try {
+      const device = await (navigator as any).usb.requestDevice({ filters: [] });
+      await device.open();
+      
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
+      }
+      
+      // Look for interface and bulk OUT endpoint
+      let endpoint = null;
+      let interfaceNumber = 0;
+      
+      for (const config of device.configurations) {
+        for (const iface of config.interfaces) {
+          for (const alternate of iface.alternates) {
+            const endpoints = alternate.endpoints;
+            for (const ep of endpoints) {
+              if (ep.direction === 'out' && ep.type === 'bulk') {
+                endpoint = ep;
+                interfaceNumber = iface.interfaceNumber;
+                break;
+              }
+            }
+            if (endpoint) break;
+          }
+          if (endpoint) break;
+        }
+        if (endpoint) break;
+      }
+      
+      if (!endpoint) {
+        throw new Error('No writable Bulk Out endpoint found on this USB device. Make sure it is a printer.');
+      }
+      
+      await device.claimInterface(interfaceNumber);
+      
+      setUsbDevice(device);
+      setUsbEndpoint(endpoint);
+      setUsbInterfaceNumber(interfaceNumber);
+    } catch (err: any) {
+      console.error(err);
+      setUsbError(err.message || 'Failed to connect to USB printer.');
+    } finally {
+      setUsbConnecting(false);
+    }
+  };
+
+  const disconnectUsb = async () => {
+    if (usbDevice) {
+      try {
+        if (usbInterfaceNumber !== null) {
+          await usbDevice.releaseInterface(usbInterfaceNumber);
+        }
+        await usbDevice.close();
+      } catch (err) {
+        console.error('Error disconnecting USB:', err);
+      }
+    }
+    setUsbDevice(null);
+    setUsbEndpoint(null);
+    setUsbInterfaceNumber(null);
+  };
+
+  const printViaUsb = async () => {
+    if (!selectedBill || !usbDevice || !usbEndpoint) return;
+    try {
+      const buffer = compileReceipt(selectedBill, showGST);
+      await usbDevice.transferOut(usbEndpoint.endpointNumber, buffer);
+      alert('Printed successfully via USB!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Print failed: ' + (err.message || err));
+    }
+  };
+
+  // Listen for USB device disconnects
+  useEffect(() => {
+    if (!isUsbSupported) return;
+    
+    const handleDisconnect = (event: any) => {
+      if (usbDevice && event.device === usbDevice) {
+        setUsbDevice(null);
+        setUsbEndpoint(null);
+        setUsbInterfaceNumber(null);
+      }
+    };
+    
+    (navigator as any).usb.addEventListener('disconnect', handleDisconnect);
+    return () => {
+      (navigator as any).usb.removeEventListener('disconnect', handleDisconnect);
+    };
+  }, [usbDevice, isUsbSupported]);
 
   useEffect(() => {
     const fetchBills = async () => {
@@ -331,17 +438,18 @@ export default function BillMachinePage() {
 
         {/* Printer Connection Status */}
         <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {/* Bluetooth Connection */}
           {!isBluetoothSupported ? (
-            <div className="flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-sm">
-              <AlertCircle size={14} /> Bluetooth not supported in this browser
+            <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm">
+              <AlertCircle size={14} /> BT not supported
             </div>
           ) : btDevice ? (
-            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3.5 py-2 rounded-xl shadow-sm text-sm">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-semibold text-emerald-800">Connected: {btDevice.name || 'BT Printer'}</span>
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl shadow-sm text-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-semibold text-emerald-800">BT: {btDevice.name || 'Connected'}</span>
               <button 
                 onClick={disconnectBluetooth}
-                className="text-xs font-bold text-red-600 hover:text-red-800 ml-2 hover:underline cursor-pointer"
+                className="text-[10px] font-bold text-red-600 hover:text-red-800 ml-1 hover:underline cursor-pointer"
               >
                 Disconnect
               </button>
@@ -350,15 +458,49 @@ export default function BillMachinePage() {
             <button
               onClick={connectBluetooth}
               disabled={btConnecting}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow-md shadow-blue-600/10 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-xl text-xs shadow-md shadow-blue-600/10 transition active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               {btConnecting ? (
                 <>
-                  <Activity className="animate-spin" size={16} /> Connecting...
+                  <Activity className="animate-spin" size={14} /> Connecting BT...
                 </>
               ) : (
                 <>
-                  <Bluetooth size={16} /> Connect BT Printer
+                  <Bluetooth size={14} /> Connect BT
+                </>
+              )}
+            </button>
+          )}
+
+          {/* USB Connection */}
+          {!isUsbSupported ? (
+            <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm">
+              <AlertCircle size={14} /> USB not supported
+            </div>
+          ) : usbDevice ? (
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl shadow-sm text-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-semibold text-emerald-800">USB: {usbDevice.productName || 'Connected'}</span>
+              <button 
+                onClick={disconnectUsb}
+                className="text-[10px] font-bold text-red-600 hover:text-red-800 ml-1 hover:underline cursor-pointer"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={connectUsb}
+              disabled={usbConnecting}
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-2 rounded-xl text-xs shadow-md shadow-purple-600/10 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {usbConnecting ? (
+                <>
+                  <Activity className="animate-spin" size={14} /> Connecting USB...
+                </>
+              ) : (
+                <>
+                  <Usb size={14} /> Connect USB
                 </>
               )}
             </button>
@@ -366,7 +508,12 @@ export default function BillMachinePage() {
 
           {btError && (
             <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 p-2 rounded-lg">
-              {btError}
+              BT Error: {btError}
+            </span>
+          )}
+          {usbError && (
+            <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-100 p-2 rounded-lg">
+              USB Error: {usbError}
             </span>
           )}
         </div>
@@ -474,14 +621,25 @@ export default function BillMachinePage() {
               </div>
 
               <div className="border-t border-gray-150 pt-4 space-y-3">
-                {btDevice ? (
+                {btDevice && (
                   <button
                     onClick={printViaBluetooth}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/10 active:scale-95 transition-transform cursor-pointer"
                   >
                     <Bluetooth size={18} /> Print via Bluetooth
                   </button>
-                ) : (
+                )}
+
+                {usbDevice && (
+                  <button
+                    onClick={printViaUsb}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-600/10 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    <Usb size={18} /> Print via USB
+                  </button>
+                )}
+
+                {!btDevice && !usbDevice && (
                   <button
                     onClick={handlePrint}
                     className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition-transform cursor-pointer"
