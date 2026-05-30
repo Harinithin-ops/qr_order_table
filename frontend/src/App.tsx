@@ -7,6 +7,7 @@ import Bill from './pages/Bill';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import AdminQR from './pages/AdminQR';
+import AdminLayout from './components/dashboard/AdminLayout';
 import { useEffect, useState } from 'react';
 import { Activity } from 'lucide-react';
 
@@ -60,29 +61,16 @@ export default function App() {
 
         {/* Protected Dashboard/Admin Routes */}
         <Route
-          path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <AdminLayout />
             </ProtectedRoute>
           }
-        />
-        <Route
-          path="/dashboard/history"
-          element={
-            <ProtectedRoute>
-              <History />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/qr"
-          element={
-            <ProtectedRoute>
-              <AdminQR />
-            </ProtectedRoute>
-          }
-        />
+        >
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/history" element={<History />} />
+          <Route path="/admin/qr" element={<AdminQR />} />
+        </Route>
 
         {/* Fallback route */}
         <Route path="*" element={<Navigate to="/" replace />} />
