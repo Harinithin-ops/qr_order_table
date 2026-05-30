@@ -251,7 +251,7 @@ export async function generateBillForOrder(req: Request, res: Response) {
         subtotal,
         taxAmount,
         total,
-        billNumber: generateBillNumber(),
+        billNumber: await generateBillNumber(),
       },
     });
     
