@@ -41,6 +41,37 @@ export default function BillingHistoryPage() {
     fetchBills();
   }, []);
 
+  const handleApprovePayment = async (billId: string) => {
+    if (!window.confirm('Are you sure you want to approve this cash payment? This will mark the bill and the order as paid.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/bills/${billId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentStatus: 'PAID',
+          paymentMethod: 'CASH'
+        })
+      });
+
+      if (res.ok) {
+        setBills(prev =>
+          prev.map(b =>
+            b.id === billId ? { ...b, paymentStatus: 'PAID' } : b
+          )
+        );
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to approve payment');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while approving the payment');
+    }
+  };
+
   const filteredBills = bills.filter(b => 
     b.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     b.order.table.tableNumber.toString().includes(searchTerm)
@@ -123,12 +154,22 @@ export default function BillingHistoryPage() {
                        )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Link 
-                        to={`/bill/${bill.id}`}
-                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium text-xs"
-                      >
-                         View <ExternalLink size={14}/>
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        {bill.paymentStatus !== 'PAID' && bill.paymentMethod === 'CASH' && (
+                          <button
+                            onClick={() => handleApprovePayment(bill.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg transition"
+                          >
+                            Approve Cash
+                          </button>
+                        )}
+                        <Link 
+                          to={`/bill/${bill.id}`}
+                          className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium text-xs"
+                        >
+                           View <ExternalLink size={14}/>
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -171,12 +212,22 @@ export default function BillingHistoryPage() {
                       </span>
                     ) : '-'}
                   </div>
-                  <Link 
-                    to={`/bill/${bill.id}`}
-                    className="flex items-center gap-1 text-red-600 font-bold text-xs bg-red-50 px-3 py-1.5 rounded-lg"
-                  >
-                     View Invoice <ExternalLink size={14}/>
-                  </Link>
+                  <div className="flex gap-2">
+                    {bill.paymentStatus !== 'PAID' && bill.paymentMethod === 'CASH' && (
+                      <button
+                        onClick={() => handleApprovePayment(bill.id)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition"
+                      >
+                        Approve Cash
+                      </button>
+                    )}
+                    <Link 
+                      to={`/bill/${bill.id}`}
+                      className="flex items-center gap-1 text-red-600 font-bold text-xs bg-red-50 px-3 py-1.5 rounded-lg"
+                    >
+                       View Invoice <ExternalLink size={14}/>
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))
