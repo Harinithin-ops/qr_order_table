@@ -179,10 +179,14 @@ export default function WaiterOrders() {
   const { lastEvent } = useEventSource('/api/events');
 
   const [tables, setTables] = useState<Table[]>([]);
-  const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [savedTables, setSavedTables] = useState<string[]>([]); // What's in DB
+  const [pendingTables, setPendingTables] = useState<string[]>([]); // Local selection (not yet saved)
   const [currentUsername, setCurrentUsername] = useState<string>('');
   const [selectionError, setSelectionError] = useState('');
   const [submittingAssignment, setSubmittingAssignment] = useState(false);
+
+  // Derived: did local selection differ from saved?
+  const hasUnsavedChanges = JSON.stringify([...pendingTables].sort()) !== JSON.stringify([...savedTables].sort());
 
   const fetchOrders = async () => {
     try {
@@ -222,13 +226,21 @@ export default function WaiterOrders() {
     void fetchUserRole();
   }, []);
 
-  // Compute selectedTables dynamically when tables or username updates
+  // Sync pendingTables + savedTables when tables or username changes (e.g. fresh page load)
   useEffect(() => {
     if (currentUsername) {
       const assignedToMe = tables
         .filter(t => t.assignedWaiter?.username.toLowerCase() === currentUsername.toLowerCase())
         .map(t => t.id);
-      setSelectedTables(assignedToMe);
+      setSavedTables(assignedToMe);
+      // Only overwrite pending if we haven't touched anything yet
+      setPendingTables(prev => {
+        // If pending is empty or equals what was just loaded, sync it too
+        if (prev.length === 0 || JSON.stringify([...prev].sort()) === JSON.stringify([...assignedToMe].sort())) {
+          return assignedToMe;
+        }
+        return prev;
+      });
     }
   }, [tables, currentUsername]);
 
@@ -245,7 +257,7 @@ export default function WaiterOrders() {
 
     if (lastEvent.type === 'NEW_ORDER') {
       const targetTableId = lastEvent.data?.tableId;
-      if (typeof targetTableId === 'string' && selectedTables.includes(targetTableId)) {
+      if (typeof targetTableId === 'string' && savedTables.includes(targetTableId)) {
         try {
           const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
           void audio.play().catch(() => {});
@@ -256,7 +268,7 @@ export default function WaiterOrders() {
     if (lastEvent.type === 'PAYMENT_SUBMITTED' || (lastEvent.type === 'ORDER_UPDATE' && lastEvent.data.status === 'PAID')) {
       const targetTableId = lastEvent.data?.tableId;
       // Only display payment notices and play payment sounds if the table is maintained by this waiter
-      if (typeof targetTableId === 'string' && !selectedTables.includes(targetTableId)) {
+      if (typeof targetTableId === 'string' && !savedTables.includes(targetTableId)) {
         return;
       }
 
@@ -274,21 +286,34 @@ export default function WaiterOrders() {
       const t = window.setTimeout(() => setPaymentNotice(null), 12000);
       return () => clearTimeout(t);
     }
-  }, [lastEvent, selectedTables]);
+  }, [lastEvent, savedTables]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  /** Toggles a table selection, saving to the database exclusively */
-  const handleToggleTable = async (tableId: string) => {
-    let nextSelected;
-    if (selectedTables.includes(tableId)) {
-      nextSelected = selectedTables.filter(id => id !== tableId);
-    } else {
-      if (selectedTables.length >= 5) {
-        setSelectionError("You shouldn't select more than 5 tables.");
-        return;
+  /** Toggles a table selection locally — does NOT call the API yet */
+  const handleToggleTable = (tableId: string) => {
+    setSelectionError('');
+    setPendingTables(prev => {
+      if (prev.includes(tableId)) {
+        return prev.filter(id => id !== tableId);
       }
-      nextSelected = [...selectedTables, tableId];
+      if (prev.length >= 5) {
+        setSelectionError("You can't select more than 5 tables.");
+        return prev;
+      }
+      return [...prev, tableId];
+    });
+  };
+
+  /** Commits the pending selection to the database */
+  const handleSaveTables = async () => {
+    if (pendingTables.length < 2) {
+      setSelectionError('Please select at least 2 tables before saving.');
+      return;
+    }
+    if (pendingTables.length > 5) {
+      setSelectionError("You can't select more than 5 tables.");
+      return;
     }
 
     setSubmittingAssignment(true);
@@ -297,18 +322,24 @@ export default function WaiterOrders() {
       const res = await fetch('/api/tables/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableIds: nextSelected }),
+        body: JSON.stringify({ tableIds: pendingTables }),
       });
       if (res.ok) {
         const updated = await res.json() as Table[];
         setTables(updated);
+        // Sync savedTables to reflect what's now in the DB
+        const myTables = updated
+          .filter(t => t.assignedWaiter?.username.toLowerCase() === currentUsername.toLowerCase())
+          .map(t => t.id);
+        setSavedTables(myTables);
+        setPendingTables(myTables);
       } else {
         const err = await res.json();
-        setSelectionError(err.error || 'Failed to assign table.');
+        setSelectionError(err.error || 'Failed to save table assignment.');
       }
     } catch (e) {
       console.error(e);
-      setSelectionError('Network error updating assignments.');
+      setSelectionError('Network error saving assignments.');
     } finally {
       setSubmittingAssignment(false);
     }
@@ -356,10 +387,10 @@ export default function WaiterOrders() {
     );
   }
 
-  // Filter active live orders by selected tables!
+  // Filter active live orders by SAVED (committed) tables
   const activeOrders = orders.filter(
     o => !['SERVED', 'PENDING', 'PAID', 'CANCELLED'].includes(o.status) &&
-         selectedTables.includes(o.tableId)
+         savedTables.includes(o.tableId)
   );
   const readyCount = activeOrders.filter(o => o.status === 'READY').length;
 
@@ -408,16 +439,22 @@ export default function WaiterOrders() {
               Waiter Table Assignments
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Select between <strong>2 and 5 tables</strong> to monitor. Tables assigned to other waiters are locked in real-time.
+              Select between <strong>2 and 5 tables</strong>, then click <strong>Save</strong> to lock them in. Tables assigned to other waiters are locked.
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Unsaved indicator */}
+            {hasUnsavedChanges && (
+              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-1 rounded-lg animate-pulse">
+                Unsaved changes
+              </span>
+            )}
             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-              selectedTables.length >= 2 && selectedTables.length <= 5
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
-                : 'bg-amber-50 text-amber-700 border border-amber-250'
+              pendingTables.length >= 2 && pendingTables.length <= 5
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border border-amber-200'
             }`}>
-              {selectedTables.length} selected
+              {pendingTables.length} / 5 selected
             </span>
           </div>
         </div>
@@ -431,9 +468,13 @@ export default function WaiterOrders() {
 
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
           {tables.map(table => {
-            const isSelected = selectedTables.includes(table.id);
+            const isPending = pendingTables.includes(table.id);
+            const isSaved = savedTables.includes(table.id);
             const isAssignedToOther = table.assignedWaiter && 
               table.assignedWaiter.username.toLowerCase() !== currentUsername.toLowerCase();
+
+            // Show "changed" ring if pending differs from saved for this table
+            const isToggled = isPending !== isSaved;
 
             return (
               <button
@@ -442,16 +483,16 @@ export default function WaiterOrders() {
                 disabled={isAssignedToOther || submittingAssignment}
                 onClick={() => handleToggleTable(table.id)}
                 className={`p-3.5 rounded-xl font-bold text-center border transition-all duration-250 active:scale-95 flex flex-col items-center justify-center gap-1.5 shadow-sm relative overflow-hidden ${
-                  isSelected
+                  isPending
                     ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
                     : isAssignedToOther
                       ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-55'
                       : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
-                }`}
+                } ${isToggled ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
               >
                 <span className="text-[10px] uppercase tracking-wider opacity-85">Table</span>
                 <span className="text-lg font-black leading-none">{table.tableNumber}</span>
-                {isSelected && (
+                {isPending && (
                   <span className="absolute top-1.5 right-1.5 text-white bg-white/20 p-0.5 rounded-full">
                     <Check size={10} strokeWidth={3} />
                   </span>
@@ -466,10 +507,45 @@ export default function WaiterOrders() {
             );
           })}
         </div>
+
+        {/* Save Button */}
+        <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between gap-3">
+          <p className="text-xs text-gray-400">
+            {pendingTables.length < 2
+              ? 'Select at least 2 tables to save'
+              : pendingTables.length > 5
+                ? 'Too many tables — max 5'
+                : hasUnsavedChanges
+                  ? 'Your selection has unsaved changes'
+                  : <span className="text-green-600 font-semibold">✓ Tables saved</span>
+            }
+          </p>
+          <button
+            type="button"
+            onClick={handleSaveTables}
+            disabled={
+              submittingAssignment ||
+              pendingTables.length < 2 ||
+              pendingTables.length > 5 ||
+              !hasUnsavedChanges
+            }
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition active:scale-95 ${
+              submittingAssignment || pendingTables.length < 2 || pendingTables.length > 5 || !hasUnsavedChanges
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20'
+            }`}
+          >
+            {submittingAssignment ? (
+              <><Activity size={16} className="animate-spin" /> Saving…</>
+            ) : (
+              <><Check size={16} strokeWidth={2.5} /> Save My Tables ({pendingTables.length})</>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Table Selection Guide Banner if invalid count */}
-      {selectedTables.length < 2 && (
+      {savedTables.length < 2 && (
         <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-pulse">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600">
@@ -478,7 +554,7 @@ export default function WaiterOrders() {
             <div>
               <h3 className="font-bold text-amber-900 text-sm">Table Maintenance Mode</h3>
               <p className="text-xs text-amber-700 mt-0.5">
-                You must select between <strong>2 and 5 tables</strong> from the grid above to view and manage live orders.
+                Select 2–5 tables above and click <strong>Save My Tables</strong> to start managing orders.
               </p>
             </div>
           </div>
@@ -486,7 +562,7 @@ export default function WaiterOrders() {
       )}
 
       {/* Ready-to-serve banner */}
-      {readyCount > 0 && selectedTables.length >= 2 && (
+      {readyCount > 0 && savedTables.length >= 2 && (
         <div className="mb-5 bg-emerald-500 text-white rounded-2xl px-4 py-3 flex items-center gap-3 shadow-md shadow-emerald-200">
           <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center shrink-0 animate-bounce">
             <CheckCircle2 size={20} />
@@ -498,7 +574,7 @@ export default function WaiterOrders() {
       )}
 
       {/* Page Header */}
-      {selectedTables.length >= 2 && (
+      {savedTables.length >= 2 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Live Orders</h1>
@@ -521,7 +597,7 @@ export default function WaiterOrders() {
       )}
 
       {/* Orders Grid */}
-      {selectedTables.length < 2 ? (
+      {savedTables.length < 2 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-gray-300">
           <div className="mx-auto w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center text-amber-500 mb-4">
             <Utensils size={32} />

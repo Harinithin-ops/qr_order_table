@@ -1,11 +1,12 @@
 import { Request, Response } from 'express';
 import { AuthenticatedRequest, generateToken, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
 import { verifyTotp, generateCurrentTotp } from '../utils/totp.js';
+import bcrypt from 'bcryptjs';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 
 export async function login(req: Request, res: Response) {
-  const { username } = req.body;
+  const { username, password } = req.body;
 
   if (username === ADMIN_USERNAME) {
     try {
@@ -23,7 +24,7 @@ export async function login(req: Request, res: Response) {
     }
   }
 
-  // Otherwise, it is a waiter login attempting passwordless Username-only login
+  // Waiter login: requires username + password
   if (!username) {
     return res.status(400).json({ error: 'Username is required to login as Waiter' });
   }
@@ -37,8 +38,21 @@ export async function login(req: Request, res: Response) {
     });
 
     if (!waiter) {
-      return res.status(401).json({ error: 'Invalid waiter username' });
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
+
+    // If the waiter account has a password set, verify it
+    if (waiter.passwordHash) {
+      if (!password) {
+        return res.status(401).json({ error: 'Password is required' });
+      }
+      const passwordMatch = await bcrypt.compare(password, waiter.passwordHash);
+      if (!passwordMatch) {
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+    }
+    // If no passwordHash (legacy account with no password set), allow login but prompt to set password
+    // This covers the migration case for existing accounts created before the password field was added.
 
     const token = generateToken(waiter.username);
     
@@ -50,7 +64,12 @@ export async function login(req: Request, res: Response) {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    return res.json({ success: true, role: 'server', username: waiter.username });
+    return res.json({ 
+      success: true, 
+      role: 'server', 
+      username: waiter.username,
+      hasPassword: !!waiter.passwordHash
+    });
   } catch (err) {
     console.error('Waiter login error:', err);
     return res.status(500).json({ error: 'Internal server error during login' });
@@ -112,7 +131,14 @@ export async function getMe(req: AuthenticatedRequest, res: Response) {
 
     const { prisma } = await import('../lib/prisma.js');
     const waiter = await prisma.waiter.findUnique({
-      where: { username }
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+        passwordHash: true,
+      }
     });
 
     if (!waiter) {
@@ -120,7 +146,11 @@ export async function getMe(req: AuthenticatedRequest, res: Response) {
     }
 
     return res.json({
-      ...waiter,
+      id: waiter.id,
+      username: waiter.username,
+      email: waiter.email,
+      createdAt: waiter.createdAt,
+      hasPassword: !!waiter.passwordHash,
       role: 'waiter'
     });
   } catch (error) {
@@ -132,7 +162,7 @@ export async function getMe(req: AuthenticatedRequest, res: Response) {
 export async function updateMe(req: AuthenticatedRequest, res: Response) {
   try {
     const { username } = req;
-    const { email } = req.body;
+    const { email, currentPassword, newPassword } = req.body;
 
     if (!username) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -142,37 +172,81 @@ export async function updateMe(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ error: 'Admin details cannot be modified' });
     }
 
-    if (!email || !email.trim()) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
-
-    const trimmedEmail = email.trim().toLowerCase();
-
-    // Verify email format (rough check)
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      return res.status(400).json({ error: 'Invalid email address format' });
-    }
-
     const { prisma } = await import('../lib/prisma.js');
 
-    // Assert unique email (but allow if it belongs to the current waiter)
-    const existingEmailWaiter = await prisma.waiter.findUnique({
-      where: { email: trimmedEmail }
+    const waiter = await prisma.waiter.findUnique({
+      where: { username }
     });
 
-    if (existingEmailWaiter && existingEmailWaiter.username !== username) {
-      return res.status(400).json({ error: 'This email address is already registered to another staff member' });
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter profile not found' });
+    }
+
+    const updateData: Record<string, string> = {};
+
+    // Handle email update
+    if (email !== undefined) {
+      const trimmedEmail = (email || '').trim().toLowerCase();
+      if (!trimmedEmail) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        return res.status(400).json({ error: 'Invalid email address format' });
+      }
+      // Assert unique email (but allow if it belongs to the current waiter)
+      const existingEmailWaiter = await prisma.waiter.findUnique({
+        where: { email: trimmedEmail }
+      });
+      if (existingEmailWaiter && existingEmailWaiter.username !== username) {
+        return res.status(400).json({ error: 'This email address is already registered to another staff member' });
+      }
+      updateData.email = trimmedEmail;
+    }
+
+    // Handle password change
+    if (newPassword !== undefined) {
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      }
+
+      // If the account already has a password, verify the current one
+      if (waiter.passwordHash) {
+        if (!currentPassword) {
+          return res.status(400).json({ error: 'Current password is required to set a new password' });
+        }
+        const passwordMatch = await bcrypt.compare(currentPassword, waiter.passwordHash);
+        if (!passwordMatch) {
+          return res.status(401).json({ error: 'Current password is incorrect' });
+        }
+      }
+
+      updateData.passwordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
     }
 
     // Update Waiter
     const updatedWaiter = await prisma.waiter.update({
       where: { username },
-      data: { email: trimmedEmail }
+      data: updateData,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        createdAt: true,
+        passwordHash: true,
+      }
     });
 
     return res.json({
-      ...updatedWaiter,
+      id: updatedWaiter.id,
+      username: updatedWaiter.username,
+      email: updatedWaiter.email,
+      createdAt: updatedWaiter.createdAt,
+      hasPassword: !!updatedWaiter.passwordHash,
       role: 'waiter'
     });
   } catch (error) {
@@ -180,5 +254,3 @@ export async function updateMe(req: AuthenticatedRequest, res: Response) {
     return res.status(500).json({ error: 'Failed to update profile' });
   }
 }
-
-

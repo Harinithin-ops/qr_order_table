@@ -32,7 +32,7 @@ import {
   cleanupOldRecords
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
-import { getWaiters, createWaiter, deleteWaiter } from './controllers/waiters.controller.js';
+import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword } from './controllers/waiters.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -69,6 +69,7 @@ app.patch('/api/auth/me', authMiddleware, updateMe);
 app.get('/api/waiters', authMiddleware, adminOnly, getWaiters);
 app.post('/api/waiters', authMiddleware, adminOnly, createWaiter);
 app.delete('/api/waiters/:id', authMiddleware, adminOnly, deleteWaiter);
+app.patch('/api/waiters/:id/password', authMiddleware, adminOnly, resetWaiterPassword);
 
 // Menu
 app.get('/api/menu', getMenu);

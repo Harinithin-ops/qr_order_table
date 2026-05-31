@@ -98,9 +98,10 @@ model Bill {
 }
 
 model Waiter {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  email     String   @unique
-  tables    Table[]
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String?
+  tables       Table[]
+  createdAt    DateTime @default(now())
 }
