@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
+import { printTotpSetup } from './utils/totp.js';
+
 // Controllers
 import { login, logout, checkAuth, verifyOtp } from './controllers/auth.controller.js';
 import { getMenu, updateMenuItem, createMenuItem, deleteMenuItem } from './controllers/menu.controller.js';
@@ -185,6 +187,7 @@ runStartersMigration();
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`🚀 Express server running on port ${PORT}`);
+    printTotpSetup();
   });
 }
 

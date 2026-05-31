@@ -11,8 +11,6 @@ export default function LoginPage() {
   // OTP States
   const [otpRequired, setOtpRequired] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
-  const [emailSent, setEmailSent] = useState(true);
   
   const navigate = useNavigate();
 
@@ -32,8 +30,6 @@ export default function LoginPage() {
         const data = await res.json();
         if (data.otpRequired) {
           setOtpRequired(true);
-          setAdminEmail(data.email);
-          setEmailSent(data.emailSent !== false);
         } else {
           // Direct login (like waiter testing)
           navigate('/dashboard');
@@ -120,33 +116,19 @@ export default function LoginPage() {
               </button>
             </form>
           ) : (
-            /* Phase 2: Supabase OTP Verification */
+            /* Phase 2: Authenticator OTP Verification */
             <form onSubmit={handleVerifyOtp} className="space-y-6">
-              {emailSent ? (
-                <div className="text-center p-3 bg-amber-50/40 rounded-xl border border-amber-100/50 mb-2">
-                  <p className="text-xs text-gray-600 mb-1.5 leading-relaxed">
-                    A secure 6-digit verification code has been dispatched to:
-                  </p>
-                  <p className="font-bold text-amber-900 text-sm mb-1.5 tracking-wide">
-                    {adminEmail}
-                  </p>
-                  <p className="text-[10px] text-gray-400 leading-normal">
-                    Check your inbox (or spam) and enter the code below to complete authorization.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 leading-relaxed space-y-1.5">
-                  <p className="font-bold flex items-center gap-1.5 text-amber-900">
-                    <span>⚠️</span> Supabase Email Rate Limit Exceeded
-                  </p>
-                  <p>
-                    Supabase's free-tier SMTP limit (3 emails/hour) has been reached, preventing direct email dispatch.
-                  </p>
-                  <p>
-                    No worries! Please check your <strong>backend terminal logs</strong> and retrieve the active 6-digit code from the <strong className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[11px] text-amber-950">SECURE VERIFICATION OTP</strong> box to log in immediately!
-                  </p>
-                </div>
-              )}
+              <div className="text-center p-3.5 bg-gray-50 rounded-xl border border-gray-200/80 mb-2">
+                <p className="text-xs text-gray-600 mb-1.5 leading-relaxed">
+                  Enter the rolling 6-digit verification code from your
+                </p>
+                <p className="font-bold text-gray-950 text-sm mb-1.5 tracking-wide">
+                  Authenticator App
+                </p>
+                <p className="text-[10px] text-gray-400 leading-normal">
+                  (Or retrieve the active code printed in your server's backend terminal logs)
+                </p>
+              </div>
 
               {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm text-center">

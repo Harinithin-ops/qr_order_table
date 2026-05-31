@@ -1,25 +1,15 @@
 import { Request, Response } from 'express';
 import { AuthenticatedRequest, generateToken, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
-import { createClient } from '@supabase/supabase-js';
+import { verifyTotp, generateCurrentTotp } from '../utils/totp.js';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'kavitha2024';
 
 const SERVER_USERNAME = process.env.SERVER_USERNAME || 'server';
 const SERVER_PASSWORD = process.env.SERVER_PASSWORD || 'server2024';
 
-const ADMIN_EMAIL = 'kavithahotel47471@gmail.com';
-
-const supabaseUrl = process.env.SUPABASE_URL || 'https://ozutplxygsiijdkgbici.supabase.co';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
-
-const supabase = supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
-// In-memory OTP storage for fallbacks & development testing
-const pendingOtps = new Map<string, { code: string; expiresAt: number }>();
-
 export async function login(req: Request, res: Response) {
-  const { username, password } = req.body;
+  const { username } = req.body;
+  const password = req.body.password; // optional for admin, required for server
 
   if (username === SERVER_USERNAME && password === SERVER_PASSWORD) {
     const token = generateToken(username);
@@ -36,38 +26,18 @@ export async function login(req: Request, res: Response) {
   }
 
   if (username === ADMIN_USERNAME) {
-    // Admin login triggers OTP
     try {
-      // Generate a secure verification code and store it in-memory (always active as instant terminal bypass)
-      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-      pendingOtps.set(ADMIN_EMAIL, {
-        code: fallbackCode,
-        expiresAt: Date.now() + 10 * 60 * 1000 // 10 mins
-      });
+      // Generate current rolling TOTP code and log it in console as fallback
+      const totpCode = generateCurrentTotp();
 
       console.log(`\n\n==================================================`);
-      console.log(`📩 SECURE VERIFICATION OTP for ${ADMIN_EMAIL}: [ ${fallbackCode} ]`);
+      console.log(`🔒 ACTIVE TOTP CODE (Authenticator): [ ${totpCode} ]`);
       console.log(`==================================================\n\n`);
-
-      let emailSent = true;
-      if (supabase) {
-        const { error } = await supabase.auth.signInWithOtp({
-          email: ADMIN_EMAIL,
-          options: { shouldCreateUser: true }
-        });
-        
-        if (error) {
-          console.error('Supabase OTP send failed:', error);
-          emailSent = false;
-        } else {
-          console.log(`📩 Supabase OTP sent successfully to ${ADMIN_EMAIL}`);
-        }
-      }
       
-      return res.json({ success: true, otpRequired: true, email: ADMIN_EMAIL, emailSent });
+      return res.json({ success: true, otpRequired: true });
     } catch (err) {
-      console.error('OTP flow error:', err);
-      return res.status(500).json({ error: 'Failed to trigger verification code' });
+      console.error('TOTP flow error:', err);
+      return res.status(500).json({ error: 'Failed to trigger verification' });
     }
   }
 
@@ -81,32 +51,8 @@ export async function verifyOtp(req: Request, res: Response) {
     return res.status(400).json({ error: 'Verification code is required' });
   }
 
-  let verified = false;
-
-  // 1. Check in-memory first (for fallback / development console OTP)
-  const pending = pendingOtps.get(ADMIN_EMAIL);
-  if (pending && pending.expiresAt > Date.now() && pending.code === code) {
-    verified = true;
-    pendingOtps.delete(ADMIN_EMAIL);
-  }
-
-  // 2. Verify with Supabase if client is configured and not yet verified
-  if (!verified && supabase) {
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: ADMIN_EMAIL,
-        token: code,
-        type: 'email'
-      });
-      if (!error) {
-        verified = true;
-      } else {
-        console.error('Supabase OTP verification failed:', error.message);
-      }
-    } catch (err) {
-      console.error('Supabase verification exception:', err);
-    }
-  }
+  // Verify the submitted code against rolling TOTP (with clock-drift tolerance window)
+  const verified = verifyTotp(code);
 
   if (verified) {
     const token = generateToken('admin');
