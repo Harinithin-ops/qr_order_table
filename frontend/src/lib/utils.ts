@@ -86,8 +86,18 @@ export function getCategoryTimingStatus(categoryName: string, date: Date = new D
     return { isOpen: true, label: '', slot: null };
   }
 
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
+  // Get the current hour and minute in Asia/Kolkata (IST) timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  
+  const formattedString = formatter.format(date);
+  let [hours, minutes] = formattedString.split(':').map(Number);
+  if (hours === 24) hours = 0;
+  
   const currentMinutes = hours * 60 + minutes;
 
   const [startH, startM] = slot.start.split(':').map(Number);
