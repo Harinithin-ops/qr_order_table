@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { HOTEL_NAME } from '@/lib/utils';
-import { Utensils, ArrowLeft, Lock, Eye, EyeOff, User } from 'lucide-react';
+import { Utensils, ArrowLeft, UserCheck, User } from 'lucide-react';
 
 export default function WaiterLoginPage() {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -20,14 +18,14 @@ export default function WaiterLoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username }),
       });
 
       if (res.ok) {
         navigate('/waiter/orders');
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Invalid credentials. Please check your username and password.');
+        setError(data.error || 'Invalid username. Please use your assigned Waiter Username.');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -49,10 +47,9 @@ export default function WaiterLoginPage() {
         </div>
 
         <div className="p-8">
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-6">
             {error && (
-              <div className="p-3 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200 font-medium flex items-center gap-2">
-                <Lock size={14} className="shrink-0" />
+              <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-200 font-medium">
                 {error}
               </div>
             )}
@@ -74,51 +71,27 @@ export default function WaiterLoginPage() {
                   placeholder="e.g. server1"
                   required
                   autoComplete="username"
+                  autoFocus
                 />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-                  <Lock size={16} />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-12 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm transition bg-gray-50/50"
-                  placeholder="Enter your password"
-                  required
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-amber-500 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-amber-600 transition-colors focus:outline-none disabled:opacity-70 shadow-md shadow-amber-500/20 mt-2"
+              className="w-full bg-amber-500 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-amber-600 transition-colors focus:outline-none disabled:opacity-70 shadow-md shadow-amber-500/20"
             >
               {loading ? 'Verifying…' : 'Log In to Waiter Dashboard'}
             </button>
 
             <div className="text-xs text-gray-500 text-center bg-amber-50 p-3.5 rounded-xl border border-amber-100">
+              <p className="font-bold text-amber-800 flex items-center justify-center gap-1 mb-1">
+                <UserCheck size={12} />
+                Username-Only Login
+              </p>
               <p className="leading-relaxed">
-                Use the <strong className="text-amber-800">username and password</strong> assigned to you by the admin. 
-                Contact the admin if you have forgotten your password.
+                Enter your assigned <strong className="text-amber-800">Waiter Username</strong>. 
+                Contact the Admin if you need to register a new account.
               </p>
             </div>
           </form>

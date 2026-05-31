@@ -24,7 +24,7 @@ export async function login(req: Request, res: Response) {
     }
   }
 
-  // Waiter login: requires username + password
+  // Waiter login: username only (no password required)
   if (!username) {
     return res.status(400).json({ error: 'Username is required to login as Waiter' });
   }
@@ -38,21 +38,8 @@ export async function login(req: Request, res: Response) {
     });
 
     if (!waiter) {
-      return res.status(401).json({ error: 'Invalid username or password' });
+      return res.status(401).json({ error: 'Invalid waiter username. Please check your username and try again.' });
     }
-
-    // If the waiter account has a password set, verify it
-    if (waiter.passwordHash) {
-      if (!password) {
-        return res.status(401).json({ error: 'Password is required' });
-      }
-      const passwordMatch = await bcrypt.compare(password, waiter.passwordHash);
-      if (!passwordMatch) {
-        return res.status(401).json({ error: 'Invalid username or password' });
-      }
-    }
-    // If no passwordHash (legacy account with no password set), allow login but prompt to set password
-    // This covers the migration case for existing accounts created before the password field was added.
 
     const token = generateToken(waiter.username);
     
@@ -67,8 +54,7 @@ export async function login(req: Request, res: Response) {
     return res.json({ 
       success: true, 
       role: 'server', 
-      username: waiter.username,
-      hasPassword: !!waiter.passwordHash
+      username: waiter.username
     });
   } catch (err) {
     console.error('Waiter login error:', err);
