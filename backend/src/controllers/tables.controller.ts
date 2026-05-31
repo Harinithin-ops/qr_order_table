@@ -2,12 +2,22 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import QRCode from 'qrcode';
+import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
 export async function getTables(req: Request, res: Response) {
   try {
     const tables = await prisma.table.findMany({
       orderBy: {
         tableNumber: 'asc',
+      },
+      include: {
+        assignedWaiter: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
       },
     });
     return res.json(tables);
@@ -186,6 +196,98 @@ export async function deleteTable(req: Request, res: Response) {
   } catch (error) {
     console.error('Failed to delete table:', error);
     return res.status(500).json({ error: 'Failed to delete table' });
+  }
+}
+
+export async function assignTables(req: Request, res: Response) {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { tableIds } = req.body; // Array of table IDs
+
+    if (!Array.isArray(tableIds)) {
+      return res.status(400).json({ error: 'Invalid tableIds format. Must be an array.' });
+    }
+
+    if (tableIds.length > 5) {
+      return res.status(400).json({ error: "You shouldn't select more than 5 tables." });
+    }
+
+    const username = authReq.username;
+    if (!username) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Find the waiter by username
+    const waiter = await prisma.waiter.findUnique({
+      where: { username }
+    });
+
+    if (!waiter && username !== 'admin') {
+      return res.status(404).json({ error: 'Waiter profile not found' });
+    }
+
+    const waiterId = waiter ? waiter.id : 'admin';
+
+    // Verify if any table in tableIds is already assigned to a DIFFERENT waiter
+    const assignedElsewhere = await prisma.table.findMany({
+      where: {
+        id: { in: tableIds },
+        assignedWaiterId: {
+          not: null,
+          notIn: [waiterId]
+        }
+      },
+      include: {
+        assignedWaiter: true
+      }
+    });
+
+    if (assignedElsewhere.length > 0) {
+      const numbers = assignedElsewhere.map(t => t.tableNumber).join(', ');
+      const names = assignedElsewhere.map(t => t.assignedWaiter?.username || 'another waiter').join(', ');
+      return res.status(400).json({
+        error: `Table ${numbers} is already assigned to ${names}.`
+      });
+    }
+
+    // Atomically reassign tables
+    await prisma.$transaction(async (tx) => {
+      // 1. Release all tables currently assigned to this waiter
+      await tx.table.updateMany({
+        where: { assignedWaiterId: waiterId },
+        data: { assignedWaiterId: null }
+      });
+
+      // 2. Assign the new tables
+      if (tableIds.length > 0) {
+        await tx.table.updateMany({
+          where: { id: { in: tableIds } },
+          data: { assignedWaiterId: waiterId }
+        });
+      }
+    });
+
+    // Emit TABLES_UPDATE event to alert SSE clients
+    eventEmitter.emit('TABLES_UPDATE', {});
+
+    // Return the updated list of all tables
+    const updatedTables = await prisma.table.findMany({
+      orderBy: { tableNumber: 'asc' },
+      include: {
+        assignedWaiter: {
+          select: {
+            id: true,
+            username: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    return res.json(updatedTables);
+  } catch (error) {
+    console.error('Failed to assign tables:', error);
+    return res.status(500).json({ error: 'Failed to assign tables' });
   }
 }
 

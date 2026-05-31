@@ -8,7 +8,7 @@ import { printTotpSetup } from './utils/totp.js';
 // Controllers
 import { login, logout, checkAuth, verifyOtp, getMe, updateMe } from './controllers/auth.controller.js';
 import { getMenu, updateMenuItem, createMenuItem, deleteMenuItem } from './controllers/menu.controller.js';
-import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable } from './controllers/tables.controller.js';
+import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable, assignTables } from './controllers/tables.controller.js';
 import {
   createOrder,
   getOrders,
@@ -78,6 +78,7 @@ app.delete('/api/menu/:id', authMiddleware, adminOnly, deleteMenuItem);
 
 // Tables
 app.get('/api/tables', getTables);
+app.post('/api/tables/assign', authMiddleware, assignTables);
 app.post('/api/tables', authMiddleware, adminOnly, createTable);
 app.delete('/api/tables/:id', authMiddleware, adminOnly, deleteTable);
 app.post('/api/tables/:id/call-waiter', callWaiter);

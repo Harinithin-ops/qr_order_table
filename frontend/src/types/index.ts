@@ -93,7 +93,7 @@ export interface OrderUpdatePayload {
 }
 
 export interface SSEEvent {
-  type: 'NEW_ORDER' | 'ORDER_UPDATE' | 'WAITER_CALL' | 'WAITER_DISMISS' | 'STOCK_UPDATE' | 'BILL_REQUEST' | 'PAYMENT_SUBMITTED';
+  type: 'NEW_ORDER' | 'ORDER_UPDATE' | 'WAITER_CALL' | 'WAITER_DISMISS' | 'STOCK_UPDATE' | 'BILL_REQUEST' | 'PAYMENT_SUBMITTED' | 'TABLES_UPDATE';
   data: Record<string, unknown>;
   timestamp: string;
 }

@@ -27,6 +27,8 @@ model Table {
   active        Boolean  @default(true)
   callingWaiter Boolean  @default(false)
   orders        Order[]
+  assignedWaiterId String?
+  assignedWaiter   Waiter?   @relation(fields: [assignedWaiterId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
 }
 
@@ -99,5 +101,6 @@ model Waiter {
   id        String   @id @default(cuid())
   username  String   @unique
   email     String   @unique
+  tables    Table[]
   createdAt DateTime @default(now())
 }

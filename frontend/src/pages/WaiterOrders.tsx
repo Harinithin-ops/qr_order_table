@@ -18,6 +18,7 @@ import {
   Bell,
   Utensils,
   Check,
+  Lock,
 } from 'lucide-react';
 import { formatDate, getStatusColor } from '@/lib/utils';
 
@@ -163,6 +164,11 @@ interface Table {
   slug: string;
   active: boolean;
   callingWaiter: boolean;
+  assignedWaiter?: {
+    id: string;
+    username: string;
+    email: string;
+  } | null;
 }
 
 export default function WaiterOrders() {
@@ -173,15 +179,10 @@ export default function WaiterOrders() {
   const { lastEvent } = useEventSource('/api/events');
 
   const [tables, setTables] = useState<Table[]>([]);
-  const [selectedTables, setSelectedTables] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('kh_waiter_tables');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [currentUsername, setCurrentUsername] = useState<string>('');
   const [selectionError, setSelectionError] = useState('');
+  const [submittingAssignment, setSubmittingAssignment] = useState(false);
 
   const fetchOrders = async () => {
     try {
@@ -203,14 +204,42 @@ export default function WaiterOrders() {
     }
   };
 
+  const fetchUserRole = async () => {
+    try {
+      const res = await fetch('/api/auth/check', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUsername(data.username || '');
+      }
+    } catch (e) {
+      console.error('Failed to fetch user role:', e);
+    }
+  };
+
   useEffect(() => {
     void fetchOrders();
     void fetchTables();
+    void fetchUserRole();
   }, []);
+
+  // Compute selectedTables dynamically when tables or username updates
+  useEffect(() => {
+    if (currentUsername) {
+      const assignedToMe = tables
+        .filter(t => t.assignedWaiter?.username.toLowerCase() === currentUsername.toLowerCase())
+        .map(t => t.id);
+      setSelectedTables(assignedToMe);
+    }
+  }, [tables, currentUsername]);
 
   useEffect(() => {
     if (!lastEvent) return;
-    if (!['NEW_ORDER', 'ORDER_UPDATE', 'PAYMENT_SUBMITTED'].includes(lastEvent.type)) return;
+    if (!['NEW_ORDER', 'ORDER_UPDATE', 'PAYMENT_SUBMITTED', 'TABLES_UPDATE'].includes(lastEvent.type)) return;
+
+    if (lastEvent.type === 'TABLES_UPDATE') {
+      void fetchTables();
+      return;
+    }
 
     void fetchOrders();
 
@@ -249,23 +278,40 @@ export default function WaiterOrders() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  /** Toggles a table selection, restricting selection to at most 5 tables */
-  const handleToggleTable = (tableId: string) => {
-    setSelectedTables(prev => {
-      let next;
-      if (prev.includes(tableId)) {
-        next = prev.filter(id => id !== tableId);
-      } else {
-        if (prev.length >= 5) {
-          setSelectionError("You shouldn't select more than 5 tables.");
-          return prev;
-        }
-        next = [...prev, tableId];
+  /** Toggles a table selection, saving to the database exclusively */
+  const handleToggleTable = async (tableId: string) => {
+    let nextSelected;
+    if (selectedTables.includes(tableId)) {
+      nextSelected = selectedTables.filter(id => id !== tableId);
+    } else {
+      if (selectedTables.length >= 5) {
+        setSelectionError("You shouldn't select more than 5 tables.");
+        return;
       }
-      setSelectionError('');
-      localStorage.setItem('kh_waiter_tables', JSON.stringify(next));
-      return next;
-    });
+      nextSelected = [...selectedTables, tableId];
+    }
+
+    setSubmittingAssignment(true);
+    setSelectionError('');
+    try {
+      const res = await fetch('/api/tables/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableIds: nextSelected }),
+      });
+      if (res.ok) {
+        const updated = await res.json() as Table[];
+        setTables(updated);
+      } else {
+        const err = await res.json();
+        setSelectionError(err.error || 'Failed to assign table.');
+      }
+    } catch (e) {
+      console.error(e);
+      setSelectionError('Network error updating assignments.');
+    } finally {
+      setSubmittingAssignment(false);
+    }
   };
 
   /** Advance order to any status */
@@ -362,7 +408,7 @@ export default function WaiterOrders() {
               Waiter Table Assignments
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Select between <strong>2 and 5 tables</strong> to monitor. Selection is persisted.
+              Select between <strong>2 and 5 tables</strong> to monitor. Tables assigned to other waiters are locked in real-time.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -386,15 +432,21 @@ export default function WaiterOrders() {
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
           {tables.map(table => {
             const isSelected = selectedTables.includes(table.id);
+            const isAssignedToOther = table.assignedWaiter && 
+              table.assignedWaiter.username.toLowerCase() !== currentUsername.toLowerCase();
+
             return (
               <button
                 key={table.id}
                 type="button"
+                disabled={isAssignedToOther || submittingAssignment}
                 onClick={() => handleToggleTable(table.id)}
                 className={`p-3.5 rounded-xl font-bold text-center border transition-all duration-250 active:scale-95 flex flex-col items-center justify-center gap-1.5 shadow-sm relative overflow-hidden ${
                   isSelected
                     ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
-                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
+                    : isAssignedToOther
+                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-55'
+                      : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
                 }`}
               >
                 <span className="text-[10px] uppercase tracking-wider opacity-85">Table</span>
@@ -403,6 +455,12 @@ export default function WaiterOrders() {
                   <span className="absolute top-1.5 right-1.5 text-white bg-white/20 p-0.5 rounded-full">
                     <Check size={10} strokeWidth={3} />
                   </span>
+                )}
+                {isAssignedToOther && (
+                  <div className="flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded bg-gray-200/50 text-[9px] font-bold text-gray-500 uppercase tracking-wider">
+                    <Lock size={8} className="shrink-0" />
+                    <span className="truncate max-w-[50px]">{table.assignedWaiter?.username}</span>
+                  </div>
                 )}
               </button>
             );
