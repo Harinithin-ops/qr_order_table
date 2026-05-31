@@ -41,7 +41,7 @@ export async function login(req: Request, res: Response) {
       if (supabase) {
         const { error } = await supabase.auth.signInWithOtp({
           email: ADMIN_EMAIL,
-          options: { shouldCreateUser: false }
+          options: { shouldCreateUser: true }
         });
         
         if (error) {
