@@ -32,7 +32,9 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/check');
+        const res = await fetch('/api/auth/check', {
+          credentials: 'include'
+        });
         if (res.ok) {
           const data = await res.json();
           setIsAuthenticated(data.authenticated);
@@ -67,7 +69,9 @@ function AdminRoute({ children }: AdminRouteProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/check');
+        const res = await fetch('/api/auth/check', {
+          credentials: 'include'
+        });
         if (res.ok) {
           const data = await res.json();
           setIsAdmin(data.authenticated && data.username === 'admin');

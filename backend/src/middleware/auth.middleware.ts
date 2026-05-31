@@ -13,7 +13,19 @@ function validateToken(token: string): boolean {
     const parts = decoded.split(':');
     if (parts.length < 3) return false;
     // Check that it contains our secret
-    return parts[2] === AUTH_TOKEN_SECRET;
+    if (parts[2] !== AUTH_TOKEN_SECRET) return false;
+
+    // Enforce 12-hour expiration for admin
+    if (parts[0] === 'admin') {
+      const timestamp = parseInt(parts[1], 10);
+      if (isNaN(timestamp)) return false;
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      if (Date.now() - timestamp > twelveHoursMs) {
+        return false;
+      }
+    }
+
+    return true;
   } catch {
     return false;
   }

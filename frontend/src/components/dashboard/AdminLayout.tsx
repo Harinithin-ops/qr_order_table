@@ -14,7 +14,9 @@ export default function AdminLayout() {
 
   const fetchActiveCount = async () => {
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch('/api/orders', {
+        credentials: 'include'
+      });
       if (res.ok) {
         const data = await res.json();
         const active = data.filter((o: any) => o.status !== 'PAID');
@@ -27,7 +29,9 @@ export default function AdminLayout() {
 
   const fetchUserRole = async () => {
     try {
-      const res = await fetch('/api/auth/check');
+      const res = await fetch('/api/auth/check', {
+        credentials: 'include'
+      });
       if (res.ok) {
         const data = await res.json();
         setUserRole(data.username || 'admin');
@@ -58,7 +62,10 @@ export default function AdminLayout() {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      const res = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
       if (res.ok) {
         navigate('/login');
       }

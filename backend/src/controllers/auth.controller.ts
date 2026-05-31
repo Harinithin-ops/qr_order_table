@@ -75,7 +75,7 @@ export async function verifyOtp(req: Request, res: Response) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 12 * 60 * 60 * 1000 // 12 hours
     });
 
     return res.json({ success: true, role: 'admin' });
