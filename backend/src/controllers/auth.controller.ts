@@ -38,6 +38,17 @@ export async function login(req: Request, res: Response) {
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     // Admin login triggers OTP
     try {
+      // Generate a secure verification code and store it in-memory (always active as instant terminal bypass)
+      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
+      pendingOtps.set(ADMIN_EMAIL, {
+        code: fallbackCode,
+        expiresAt: Date.now() + 10 * 60 * 1000 // 10 mins
+      });
+
+      console.log(`\n\n==================================================`);
+      console.log(`📩 SECURE VERIFICATION OTP for ${ADMIN_EMAIL}: [ ${fallbackCode} ]`);
+      console.log(`==================================================\n\n`);
+
       if (supabase) {
         const { error } = await supabase.auth.signInWithOtp({
           email: ADMIN_EMAIL,
@@ -45,27 +56,10 @@ export async function login(req: Request, res: Response) {
         });
         
         if (error) {
-          console.error('Supabase OTP send failed, falling back to console code:', error);
-          const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-          pendingOtps.set(ADMIN_EMAIL, {
-            code: fallbackCode,
-            expiresAt: Date.now() + 10 * 60 * 1000 // 10 mins
-          });
-          console.log(`\n\n==================================================`);
-          console.log(`📩 SECURE FALLBACK OTP for ${ADMIN_EMAIL}: [ ${fallbackCode} ]`);
-          console.log(`==================================================\n\n`);
+          console.error('Supabase OTP send failed:', error);
         } else {
           console.log(`📩 Supabase OTP sent successfully to ${ADMIN_EMAIL}`);
         }
-      } else {
-        const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-        pendingOtps.set(ADMIN_EMAIL, {
-          code: fallbackCode,
-          expiresAt: Date.now() + 10 * 60 * 1000
-        });
-        console.log(`\n\n==================================================`);
-        console.log(`📩 SECURE DEVELOPER OTP for ${ADMIN_EMAIL}: [ ${fallbackCode} ]`);
-        console.log(`==================================================\n\n`);
       }
       
       return res.json({ success: true, otpRequired: true, email: ADMIN_EMAIL });
