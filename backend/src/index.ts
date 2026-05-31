@@ -4,7 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
 // Controllers
-import { login, logout, checkAuth } from './controllers/auth.controller.js';
+import { login, logout, checkAuth, verifyOtp } from './controllers/auth.controller.js';
 import { getMenu, updateMenuItem, createMenuItem, deleteMenuItem } from './controllers/menu.controller.js';
 import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable } from './controllers/tables.controller.js';
 import {
@@ -56,6 +56,7 @@ app.use((req, res, next) => {
 
 // Auth
 app.post('/api/auth/login', login);
+app.post('/api/auth/verify-otp', verifyOtp);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/check', authMiddleware, checkAuth);
 
