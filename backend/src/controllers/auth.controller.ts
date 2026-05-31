@@ -49,6 +49,7 @@ export async function login(req: Request, res: Response) {
       console.log(`📩 SECURE VERIFICATION OTP for ${ADMIN_EMAIL}: [ ${fallbackCode} ]`);
       console.log(`==================================================\n\n`);
 
+      let emailSent = true;
       if (supabase) {
         const { error } = await supabase.auth.signInWithOtp({
           email: ADMIN_EMAIL,
@@ -57,12 +58,13 @@ export async function login(req: Request, res: Response) {
         
         if (error) {
           console.error('Supabase OTP send failed:', error);
+          emailSent = false;
         } else {
           console.log(`📩 Supabase OTP sent successfully to ${ADMIN_EMAIL}`);
         }
       }
       
-      return res.json({ success: true, otpRequired: true, email: ADMIN_EMAIL });
+      return res.json({ success: true, otpRequired: true, email: ADMIN_EMAIL, emailSent });
     } catch (err) {
       console.error('OTP flow error:', err);
       return res.status(500).json({ error: 'Failed to trigger verification code' });
