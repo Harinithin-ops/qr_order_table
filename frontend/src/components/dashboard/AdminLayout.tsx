@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, History, QrCode, LogOut, Menu, X, Utensils, Printer } from 'lucide-react';
+import { LayoutDashboard, History, QrCode, LogOut, Menu, X, Utensils, Printer, Users } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
 import { useEventSource } from '@/hooks/useEventSource';
 
@@ -43,8 +43,8 @@ export default function AdminLayout() {
   }, []);
 
   useEffect(() => {
-    // If a waiter (server role) somehow reaches admin routes, redirect them to the waiter panel
-    if (userRole === 'server') {
+    // If a waiter somehow reaches admin routes, redirect them to the waiter panel
+    if (userRole !== 'admin') {
       navigate('/waiter', { replace: true });
     }
   }, [userRole, navigate]);
@@ -98,6 +98,12 @@ export default function AdminLayout() {
         name: 'Table QR Codes',
         path: '/admin/qr',
         icon: QrCode,
+        badge: null,
+      },
+      {
+        name: 'Manage Waiters',
+        path: '/admin/waiters',
+        icon: Users,
         badge: null,
       },
     ] : []),

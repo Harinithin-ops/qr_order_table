@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { HOTEL_NAME } from '@/lib/utils';
-import { Lock, ShieldAlert } from 'lucide-react';
+import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -88,33 +88,51 @@ export default function LoginPage() {
         <div className="p-8">
           {!otpRequired ? (
             /* Phase 1: Username Only */
-            <form onSubmit={handleLogin} className="space-y-6">
-              {error && (
-                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm text-center">
-                  {error}
+            <>
+              <form onSubmit={handleLogin} className="space-y-6">
+                {error && (
+                  <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm text-center">
+                    {error}
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-2">Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm transition bg-gray-50/50"
+                    placeholder="e.g. admin"
+                    required
+                  />
                 </div>
-              )}
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-2">Username</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm transition bg-gray-50/50"
-                  placeholder="e.g. admin"
-                  required
-                />
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-colors focus:outline-none disabled:opacity-70 font-semibold shadow-sm"
+                >
+                  {loading ? 'Sending Code...' : 'Get Login Code'}
+                </button>
+              </form>
+
+              <div className="mt-6 text-center border-t border-gray-100 pt-4 flex flex-col gap-2.5">
+                <Link 
+                  to="/waiter-login" 
+                  className="inline-flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors py-1 hover:underline"
+                >
+                  <ArrowLeft size={14} />
+                  Back to Waiter Dashboard
+                </Link>
+                <Link 
+                  to="/" 
+                  className="inline-flex items-center justify-center text-xs text-gray-400 hover:text-gray-600 transition-colors py-0.5"
+                >
+                  Back to Home
+                </Link>
               </div>
-              
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-colors focus:outline-none disabled:opacity-70 font-semibold shadow-sm"
-              >
-                {loading ? 'Sending Code...' : 'Get Login Code'}
-              </button>
-            </form>
+            </>
           ) : (
             /* Phase 2: Authenticator OTP Verification */
             <form onSubmit={handleVerifyOtp} className="space-y-6">

@@ -350,29 +350,51 @@ export async function cleanupOldRecords(req: Request, res: Response) {
   try {
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
-    // Find bills older than 2 days
+    // 1. Find bills older than 2 days
     const oldBills = await prisma.bill.findMany({
       where: { createdAt: { lt: twoDaysAgo } },
       select: { id: true, orderId: true },
     });
 
-    if (oldBills.length === 0) {
+    // 2. Find orders older than 2 days that have NO bills
+    const oldOrdersWithoutBills = await prisma.order.findMany({
+      where: {
+        createdAt: { lt: twoDaysAgo },
+        bill: null
+      },
+      select: { id: true }
+    });
+
+    const billIds = oldBills.map((b) => b.id);
+    const orderIdsWithBills = oldBills.map((b) => b.orderId);
+    const orderIdsWithoutBills = oldOrdersWithoutBills.map((o) => o.id);
+    const allOrderIds = [...orderIdsWithBills, ...orderIdsWithoutBills];
+
+    if (billIds.length === 0 && allOrderIds.length === 0) {
       return res.json({ success: true, deleted: 0, message: 'No records older than 2 days found.' });
     }
 
-    const billIds = oldBills.map((b) => b.id);
-    const orderIds = oldBills.map((b) => b.orderId);
-
     await prisma.$transaction(async (tx) => {
-      await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
-      await tx.bill.deleteMany({ where: { id: { in: billIds } } });
-      await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+      // Delete order items for all selected orders
+      if (allOrderIds.length > 0) {
+        await tx.orderItem.deleteMany({ where: { orderId: { in: allOrderIds } } });
+      }
+      // Delete the bills
+      if (billIds.length > 0) {
+        await tx.bill.deleteMany({ where: { id: { in: billIds } } });
+      }
+      // Delete the orders
+      if (allOrderIds.length > 0) {
+        await tx.order.deleteMany({ where: { id: { in: allOrderIds } } });
+      }
     });
+
+    const totalDeleted = billIds.length + orderIdsWithoutBills.length;
 
     return res.json({
       success: true,
-      deleted: oldBills.length,
-      message: `Deleted ${oldBills.length} record(s) older than 2 days.`,
+      deleted: totalDeleted,
+      message: `Deleted ${totalDeleted} record(s) older than 2 days.`,
     });
   } catch (error) {
     console.error('Failed to cleanup old records:', error);

@@ -1,7 +1,7 @@
 import { useCart } from '@/hooks/useCart';
 import { MenuItemWithCategory } from '@/types';
-import { formatCurrency } from '@/lib/utils';
-import { Flame, Star, Plus, Minus } from 'lucide-react';
+import { formatCurrency, getCategoryTimingStatus } from '@/lib/utils';
+import { Flame, Star, Plus, Minus, Lock, Clock } from 'lucide-react';
 
 interface Props {
   item: MenuItemWithCategory;
@@ -15,8 +15,11 @@ export function MenuItemCard({ item }: Props) {
     .filter((i) => i.menuItemId === item.id)
     .reduce((acc, curr) => acc + curr.quantity, 0);
 
+  const { isOpen, label: timingLabel } = getCategoryTimingStatus(item.category?.name || '');
+  const isLocked = !isOpen;
+
   const handleAdd = () => {
-    if (!item.available) return;
+    if (!item.available || isLocked) return;
     addItem({
       menuItemId: item.id,
       name: item.name,
@@ -26,6 +29,7 @@ export function MenuItemCard({ item }: Props) {
   };
 
   const handleIncrement = () => {
+    if (isLocked) return;
     const cartItem = items.find((i) => i.menuItemId === item.id);
     if (cartItem) {
       updateQuantity(cartItem.menuItemId, cartItem.quantity + 1);
@@ -35,6 +39,7 @@ export function MenuItemCard({ item }: Props) {
   };
 
   const handleDecrement = () => {
+    if (isLocked) return;
     const cartItem = items.find((i) => i.menuItemId === item.id);
     if (cartItem && cartItem.quantity > 0) {
       updateQuantity(cartItem.menuItemId, cartItem.quantity - 1);
@@ -43,8 +48,8 @@ export function MenuItemCard({ item }: Props) {
 
   return (
     <div
-      className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 ${
-        !item.available ? 'opacity-50' : ''
+      className={`flex items-center gap-3 py-3 border-b border-gray-100 last:border-0 transition-all ${
+        !item.available ? 'opacity-50' : isLocked ? 'opacity-70 bg-gray-50/10' : ''
       }`}
     >
       {/* Veg / Non-Veg dot indicator */}
@@ -84,18 +89,37 @@ export function MenuItemCard({ item }: Props) {
               OUT OF STOCK
             </span>
           )}
+          {isLocked && (
+            <span className="text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-250 inline-flex items-center gap-0.5">
+              <Lock size={8} />
+              LOCKED
+            </span>
+          )}
         </div>
         <p className="text-xs text-gray-400 mt-0.5 leading-snug line-clamp-1">
           {item.description}
         </p>
-        <span className="text-sm font-bold text-gray-800 mt-0.5 block">
-          {formatCurrency(item.price)}
-        </span>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <span className="text-sm font-bold text-gray-800">
+            {formatCurrency(item.price)}
+          </span>
+          {isLocked && timingLabel && (
+            <span className="inline-flex items-center gap-1 bg-red-50 text-red-500 text-[9px] font-semibold px-2 py-0.5 rounded border border-red-150 transition-all">
+              <Clock size={8} />
+              Only {timingLabel}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Add / Quantity Controls */}
       <div className="flex-shrink-0">
-        {!item.available ? null : cartQuantity === 0 ? (
+        {!item.available ? null : isLocked ? (
+          <span className="inline-flex items-center gap-1 bg-gray-150 border border-gray-200 text-gray-400 font-bold text-xs px-2.5 py-1.5 rounded-lg shadow-sm">
+            <Lock size={12} />
+            Locked
+          </span>
+        ) : cartQuantity === 0 ? (
           <button
             onClick={handleAdd}
             className="flex items-center gap-1 bg-white border border-green-500 text-red-600 font-bold text-sm px-3 py-1.5 rounded-lg shadow-sm hover:bg-green-50 active:scale-95 transition-transform"
@@ -126,3 +150,4 @@ export function MenuItemCard({ item }: Props) {
     </div>
   );
 }
+

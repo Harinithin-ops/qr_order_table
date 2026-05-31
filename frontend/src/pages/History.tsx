@@ -41,7 +41,9 @@ export default function BillingHistoryPage() {
   useEffect(() => {
     const fetchBills = async () => {
       try {
-        const res = await fetch('/api/bills');
+        const res = await fetch('/api/bills', {
+          credentials: 'include'
+        });
         if (res.ok) {
           const data = await res.json();
           setBills(data);
@@ -68,7 +70,8 @@ export default function BillingHistoryPage() {
         body: JSON.stringify({
           paymentStatus: 'PAID',
           paymentMethod: 'CASH'
-        })
+        }),
+        credentials: 'include'
       });
 
       if (res.ok) {
@@ -94,7 +97,10 @@ export default function BillingHistoryPage() {
     }
     setDeletingId(billId);
     try {
-      const res = await fetch(`/api/bills/${billId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/bills/${billId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
       if (res.ok) {
         setBills(prev => prev.filter(b => b.id !== billId));
       } else {
@@ -116,7 +122,10 @@ export default function BillingHistoryPage() {
     }
     setCleaning(true);
     try {
-      const res = await fetch('/api/bills/cleanup', { method: 'DELETE' });
+      const res = await fetch('/api/bills/cleanup', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
       const data = await res.json();
       if (res.ok) {
         // Reload the list after cleanup
@@ -174,7 +183,8 @@ export default function BillingHistoryPage() {
         body: JSON.stringify({
           sourceBillId: sourceId,
           targetBillId: targetMergeId
-        })
+        }),
+        credentials: 'include'
       });
 
       if (res.ok) {
@@ -231,9 +241,9 @@ export default function BillingHistoryPage() {
           {/* Clear old records button */}
           <button
             onClick={handleCleanupOldRecords}
-            disabled={cleaning || oldCount === 0}
+            disabled={cleaning}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition shadow-sm bg-red-50 text-red-700 border-red-200 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={oldCount === 0 ? 'No records older than 2 days' : `Delete ${oldCount} record(s) older than 2 days`}
+            title={oldCount === 0 ? 'Purge old bills and orders older than 2 days' : `Delete ${oldCount} record(s) older than 2 days`}
           >
             {cleaning ? (
               <Activity className="animate-spin" size={14} />

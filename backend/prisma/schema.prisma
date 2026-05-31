@@ -94,3 +94,10 @@ model Bill {
   billNumber       String   @unique
   createdAt        DateTime @default(now())
 }
+
+model Waiter {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  createdAt DateTime @default(now())
+}

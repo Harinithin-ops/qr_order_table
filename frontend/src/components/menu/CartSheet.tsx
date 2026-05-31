@@ -1,16 +1,18 @@
 import { useCart } from '@/hooks/useCart';
-import { formatCurrency, TAX_RATE } from '@/lib/utils';
-import { ShoppingBag, X, Plus, Minus, ChevronRight, AlertCircle } from 'lucide-react';
+import { formatCurrency, TAX_RATE, getCategoryTimingStatus } from '@/lib/utils';
+import { ShoppingBag, X, Plus, Minus, ChevronRight, AlertCircle, Lock } from 'lucide-react';
 import { useState } from 'react';
+import { MenuItemWithCategory } from '@/types';
 
 interface Props {
   tableId: string;
   isOpen: boolean;
   onClose: () => void;
   onOrderPlaced: (orderId: string) => void;
+  menuItems: MenuItemWithCategory[];
 }
 
-export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
+export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems }: Props) {
   const { items, updateQuantity, getTotalPrice, clearCart } = useCart();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -20,8 +22,17 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
   const gst = subtotal * TAX_RATE;
   const total = subtotal + gst;
 
+  // Helper to get category timing status for a cart item
+  const getCartItemTiming = (itemId: string) => {
+    const menuItem = menuItems.find(mi => mi.id === itemId);
+    if (!menuItem) return { isOpen: true, label: '' };
+    return getCategoryTimingStatus(menuItem.category?.name || '');
+  };
+
+  const hasLockedItems = items.some(item => !getCartItemTiming(item.menuItemId).isOpen);
+
   const handlePlaceOrder = async () => {
-    if (items.length === 0) return;
+    if (items.length === 0 || hasLockedItems) return;
     
     setIsSubmitting(true);
     setError('');
@@ -46,7 +57,8 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to place order');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to place order');
       }
 
       const order = await response.json();
@@ -54,8 +66,8 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
       setNotes('');
       onOrderPlaced(order.id);
       onClose();
-    } catch (err) {
-      setError('Something went wrong. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -99,49 +111,68 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
             <div className="space-y-6">
               {/* Items List */}
               <div className="space-y-4">
-                {items.map((item, idx) => (
-                  <div key={`${item.menuItemId}-${idx}`} className="flex gap-3 border-b border-gray-50 pb-4">
-                    <div className="w-16 h-16 rounded-md bg-gray-100 overflow-hidden flex-shrink-0">
-                      {item.image ? (
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                      ) : (
-                         <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">No Image</div>
-                      )}
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex justify-between">
-                        <h4 className="font-medium text-gray-900">{item.name}</h4>
-                        <span className="font-semibold text-gray-900">{formatCurrency(item.price * item.quantity)}</span>
+                {items.map((item, idx) => {
+                  const { isOpen: isItemOpen, label: timingLabel } = getCartItemTiming(item.menuItemId);
+                  return (
+                    <div key={`${item.menuItemId}-${idx}`} className="flex gap-3 border-b border-gray-50 pb-4">
+                      <div className="w-16 h-16 rounded-md bg-gray-100 overflow-hidden flex-shrink-0 relative">
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className={`w-full h-full object-cover ${!isItemOpen ? 'grayscale' : ''}`} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">No Image</div>
+                        )}
+                        {!isItemOpen && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white">
+                            <Lock size={16} />
+                          </div>
+                        )}
                       </div>
                       
-                      {item.specialInstructions && (
-                        <p className="text-xs text-red-600 mt-0.5 max-w-[200px] truncate">
-                          Note: {item.specialInstructions}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm text-gray-500">{formatCurrency(item.price)} each</span>
-                        <div className="flex items-center border border-gray-200 rounded text-gray-700 bg-white">
-                          <button 
-                            onClick={() => updateQuantity(item.menuItemId, Math.max(0, item.quantity - 1))} 
-                            className="px-2 py-1 hover:bg-gray-50 text-gray-500"
-                          >
-                            <Minus size={14} />
-                          </button>
-                          <span className="px-3 font-medium text-sm">{item.quantity}</span>
-                          <button 
-                            onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)} 
-                            className="px-2 py-1 hover:bg-gray-50 text-gray-500"
-                          >
-                            <Plus size={14} />
-                          </button>
+                      <div className="flex-1">
+                        <div className="flex justify-between">
+                          <h4 className={`font-medium ${!isItemOpen ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                            {item.name}
+                          </h4>
+                          <span className={`font-semibold ${!isItemOpen ? 'text-gray-400' : 'text-gray-900'}`}>
+                            {formatCurrency(item.price * item.quantity)}
+                          </span>
+                        </div>
+                        
+                        {item.specialInstructions && (
+                          <p className="text-xs text-red-600 mt-0.5 max-w-[200px] truncate">
+                            Note: {item.specialInstructions}
+                          </p>
+                        )}
+
+                        {!isItemOpen && timingLabel && (
+                          <p className="text-[10px] text-red-500 font-bold bg-red-50/70 border border-red-100 rounded px-2 py-0.5 mt-1 inline-flex items-center gap-1 w-fit">
+                            <Lock size={10} /> Locked (Only available {timingLabel})
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm text-gray-500">{formatCurrency(item.price)} each</span>
+                          <div className="flex items-center border border-gray-200 rounded text-gray-700 bg-white">
+                            <button 
+                              onClick={() => updateQuantity(item.menuItemId, Math.max(0, item.quantity - 1))} 
+                              className="px-2 py-1 hover:bg-gray-50 text-gray-500"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <span className="px-3 font-medium text-sm">{item.quantity}</span>
+                            <button 
+                              onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)} 
+                              className="px-2 py-1 hover:bg-gray-50 text-gray-500"
+                              disabled={!isItemOpen}
+                            >
+                              <Plus size={14} className={!isItemOpen ? 'text-gray-300' : ''} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Order Notes */}
@@ -153,6 +184,7 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
+                  disabled={hasLockedItems}
                 />
               </div>
 
@@ -172,6 +204,16 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
                 </div>
               </div>
 
+              {hasLockedItems && (
+                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-xs flex gap-2 items-start border border-red-150 shadow-sm">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5 animate-bounce" /> 
+                  <div>
+                    <span className="font-bold block mb-0.5">Order Blocked</span>
+                    Some items in your cart are currently locked due to time restrictions. Please remove them to proceed.
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex gap-2 items-center">
                   <AlertCircle size={16} /> {error}
@@ -186,11 +228,17 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
           <div className="p-4 border-t border-gray-100 bg-white">
             <button 
               onClick={handlePlaceOrder}
-              disabled={isSubmitting}
-              className="w-full bg-gray-900 text-white rounded-xl py-4 font-semibold text-lg hover:bg-black transition-colors disabled:opacity-70 flex justify-between items-center px-6 shadow-xl"
+              disabled={isSubmitting || hasLockedItems}
+              className={`w-full text-white rounded-xl py-4 font-semibold text-lg transition-all flex justify-between items-center px-6 shadow-xl ${
+                hasLockedItems 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed hover:bg-gray-300 shadow-none' 
+                  : 'bg-gray-900 hover:bg-black active:scale-[0.99]'
+              }`}
             >
-              <span>{isSubmitting ? 'Placing Order...' : 'Place Order'}</span>
-              {!isSubmitting && <span className="flex items-center gap-1">{formatCurrency(total)} <ChevronRight size={20} /></span>}
+              <span>{isSubmitting ? 'Placing Order...' : hasLockedItems ? 'Locked Items in Cart' : 'Place Order'}</span>
+              {!isSubmitting && !hasLockedItems && (
+                <span className="flex items-center gap-1">{formatCurrency(total)} <ChevronRight size={20} /></span>
+              )}
             </button>
           </div>
         )}
@@ -198,3 +246,4 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced }: Props) {
     </>
   );
 }
+

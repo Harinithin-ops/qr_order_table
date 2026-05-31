@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
-import { generateBillNumber, TAX_RATE } from '../lib/utils.js';
+import { generateBillNumber, TAX_RATE, getCategoryTimingStatus } from '../lib/utils.js';
 import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
 export async function createOrder(req: Request, res: Response) {
@@ -23,6 +23,26 @@ export async function createOrder(req: Request, res: Response) {
 
     if (!table) {
       return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Validate if any ordered items belong to a category that is currently locked
+    const menuItemIds = items.map((item: any) => item.menuItemId);
+    const dbMenuItems = await prisma.menuItem.findMany({
+      where: {
+        id: { in: menuItemIds }
+      },
+      include: {
+        category: true
+      }
+    });
+
+    for (const dbItem of dbMenuItems) {
+      const { isOpen, label } = getCategoryTimingStatus(dbItem.category.name);
+      if (!isOpen) {
+        return res.status(400).json({
+          error: `Sorry, '${dbItem.name}' is a ${dbItem.category.name} item and can only be ordered between ${label}.`
+        });
+      }
     }
 
     const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);

@@ -32,6 +32,7 @@ import {
   cleanupOldRecords
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
+import { getWaiters, createWaiter, deleteWaiter } from './controllers/waiters.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -61,6 +62,11 @@ app.post('/api/auth/login', login);
 app.post('/api/auth/verify-otp', verifyOtp);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/check', authMiddleware, checkAuth);
+
+// Waiters (Admin only)
+app.get('/api/waiters', authMiddleware, adminOnly, getWaiters);
+app.post('/api/waiters', authMiddleware, adminOnly, createWaiter);
+app.delete('/api/waiters/:id', authMiddleware, adminOnly, deleteWaiter);
 
 // Menu
 app.get('/api/menu', getMenu);
@@ -111,19 +117,40 @@ const runAutoCleanup = async () => {
   try {
     const { prisma } = await import('./lib/prisma.js');
     const twoDaysAgo = new Date(Date.now() - TWO_DAYS_MS);
+    
+    // Find bills older than 2 days
     const oldBills = await prisma.bill.findMany({
       where: { createdAt: { lt: twoDaysAgo } },
       select: { id: true, orderId: true },
     });
-    if (oldBills.length > 0) {
-      const billIds = oldBills.map((b: any) => b.id);
-      const orderIds = oldBills.map((b: any) => b.orderId);
+
+    // Find orders older than 2 days that have NO bills
+    const oldOrdersWithoutBills = await prisma.order.findMany({
+      where: {
+        createdAt: { lt: twoDaysAgo },
+        bill: null
+      },
+      select: { id: true }
+    });
+
+    const billIds = oldBills.map((b: any) => b.id);
+    const orderIdsWithBills = oldBills.map((b: any) => b.orderId);
+    const orderIdsWithoutBills = oldOrdersWithoutBills.map((o: any) => o.id);
+    const allOrderIds = [...orderIdsWithBills, ...orderIdsWithoutBills];
+
+    if (billIds.length > 0 || allOrderIds.length > 0) {
       await prisma.$transaction(async (tx: any) => {
-        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
-        await tx.bill.deleteMany({ where: { id: { in: billIds } } });
-        await tx.order.deleteMany({ where: { id: { in: orderIds } } });
+        if (allOrderIds.length > 0) {
+          await tx.orderItem.deleteMany({ where: { orderId: { in: allOrderIds } } });
+        }
+        if (billIds.length > 0) {
+          await tx.bill.deleteMany({ where: { id: { in: billIds } } });
+        }
+        if (allOrderIds.length > 0) {
+          await tx.order.deleteMany({ where: { id: { in: allOrderIds } } });
+        }
       });
-      console.log(`🧹 Auto-cleanup: removed ${oldBills.length} record(s) older than 2 days.`);
+      console.log(`🧹 Auto-cleanup: removed ${billIds.length + orderIdsWithoutBills.length} record(s) older than 2 days.`);
     }
   } catch (err) {
     console.error('Auto-cleanup failed:', err);

@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { HOTEL_NAME } from '@/lib/utils';
-import { Utensils, ArrowLeft } from 'lucide-react';
+import { Utensils, ArrowLeft, UserCheck } from 'lucide-react';
 
 export default function WaiterLoginPage() {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -19,15 +18,16 @@ export default function WaiterLoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        // Allow both waiter and admin to access the waiter dashboard
+        // Allow dynamic waiter to access the waiter dashboard
         navigate('/waiter/orders');
       } else {
-        setError('Invalid credentials. Use waiter credentials.');
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Invalid credentials. Please use your assigned Waiter Username.');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -37,7 +37,7 @@ export default function WaiterLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-amber-50 flex flex-col justify-center items-center p-4">
+    <div className="min-h-screen bg-amber-50/50 flex flex-col justify-center items-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden animate-slide-up">
         <div className="bg-amber-500 p-8 text-center text-white">
           <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -56,25 +56,13 @@ export default function WaiterLoginPage() {
             )}
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Waiter Username / Name</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                placeholder="waiter"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                placeholder="••••••••"
+                className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm transition"
+                placeholder="e.g. server"
                 required
               />
             </div>
@@ -82,14 +70,19 @@ export default function WaiterLoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-amber-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-amber-600 transition-colors focus:outline-none disabled:opacity-70"
+              className="w-full bg-amber-500 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-amber-600 transition-colors focus:outline-none disabled:opacity-70 shadow-sm"
             >
-              {loading ? 'Signing in...' : 'Sign In as Waiter'}
+              {loading ? 'Verifying...' : 'Log In to Waiter Dashboard'}
             </button>
 
-            <div className="text-xs text-gray-500 text-center mt-4 space-y-1 bg-amber-50 p-2.5 rounded-lg border border-amber-100">
-              <p className="font-semibold text-gray-600">Waiter Credentials:</p>
-              <p>Username: <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server</span> / <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server2024</span></p>
+            <div className="text-xs text-gray-500 text-center mt-4 space-y-1.5 bg-amber-50 p-3.5 rounded-xl border border-amber-100">
+              <p className="font-bold text-amber-800 flex items-center justify-center gap-1">
+                <UserCheck size={12} />
+                Username-Only Login
+              </p>
+              <p className="leading-relaxed">
+                Log in by entering your assigned **Waiter Username**. Contact the Admin if you need to register a new account in the system.
+              </p>
             </div>
           </form>
 

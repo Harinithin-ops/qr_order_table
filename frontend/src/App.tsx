@@ -14,6 +14,7 @@ import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 import AdminQR from './pages/AdminQR';
 import AdminMenu from './pages/AdminMenu';
+import AdminWaiters from './pages/AdminWaiters';
 import BillMachine from './pages/BillMachine';
 import AdminLayout from './components/dashboard/AdminLayout';
 import WaiterLayout from './components/dashboard/WaiterLayout';
@@ -135,6 +136,7 @@ export default function App() {
           <Route path="/dashboard/history" element={<History />} />
           <Route path="/admin/qr" element={<AdminQR />} />
           <Route path="/admin/menu" element={<AdminMenu />} />
+          <Route path="/admin/waiters" element={<AdminWaiters />} />
         </Route>
 
         {/* Fallback route */}

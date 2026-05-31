@@ -61,9 +61,16 @@ export default function MenuPage() {
         const data = await res.json();
 
         setCategories(data.map((c: any) => ({ id: c.id, name: c.name })));
-        if (data.length > 0) setActiveCategory(data[0].id);
+        if (data.length > 0) {
+          setActiveCategory(prev => prev || data[0].id);
+        }
 
-        const allItems = data.flatMap((c: any) => c.items);
+        const allItems = data.flatMap((c: any) => 
+          c.items.map((item: any) => ({
+            ...item,
+            category: { id: c.id, name: c.name }
+          }))
+        );
         setMenuItems(allItems);
       } catch (error) {
         console.error('Failed to load menu', error);
@@ -73,6 +80,11 @@ export default function MenuPage() {
     };
 
     fetchMenu();
+    const interval = setInterval(fetchMenu, 2000);
+
+    return () => {
+      clearInterval(interval);
+    };
   }, [tableId]);
 
   const handleSelectCategory = (id: string) => {
@@ -337,6 +349,7 @@ export default function MenuPage() {
           isOpen={isCartOpen}
           onClose={() => setIsCartOpen(false)}
           onOrderPlaced={handleOrderPlaced}
+          menuItems={menuItems}
         />
       </main>
     </CartProvider>

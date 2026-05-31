@@ -18,3 +18,37 @@ export async function generateBillNumber(): Promise<string> {
 }
 
 export const TAX_RATE = 0.02; // 2% GST
+
+export interface TimingSlot {
+  start: string;
+  end: string;
+  label: string;
+}
+
+export const CATEGORY_TIMINGS: Record<string, TimingSlot> = {
+  breakfast: { start: '06:30', end: '12:30', label: '6:30 AM - 12:30 PM' },
+  lunch: { start: '12:30', end: '17:30', label: '12:30 PM - 5:30 PM' },
+  dinner: { start: '17:30', end: '23:30', label: '5:30 PM - 11:30 PM' },
+  starters: { start: '12:30', end: '23:30', label: '12:30 PM - 11:30 PM' },
+};
+
+export function getCategoryTimingStatus(categoryName: string, date: Date = new Date()) {
+  const name = categoryName.toLowerCase().trim();
+  const slot = CATEGORY_TIMINGS[name];
+  if (!slot) {
+    return { isOpen: true, label: '', slot: null };
+  }
+
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const currentMinutes = hours * 60 + minutes;
+
+  const [startH, startM] = slot.start.split(':').map(Number);
+  const [endH, endM] = slot.end.split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  const isOpen = currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  return { isOpen, label: slot.label, slot };
+}
+
