@@ -118,11 +118,6 @@ export default function LoginPage() {
               >
                 {loading ? 'Sending Code...' : 'Get Login Code'}
               </button>
-              
-              <div className="text-xs text-gray-500 text-center mt-4 space-y-1 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                <p className="font-semibold text-gray-600">Admin Authentication Note:</p>
-                <p>Entering the admin username <span className="font-mono bg-white px-1 border rounded text-[10px] font-bold text-gray-700">admin</span> will trigger a secure 6-digit verification code to the registered email: <span className="font-bold underline">{adminEmail || 'kavithahotel47471@gmail.com'}</span>.</p>
-              </div>
             </form>
           ) : (
             /* Phase 2: Supabase OTP Verification */
