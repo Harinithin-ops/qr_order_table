@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 
 // Controllers
 import { login, logout, checkAuth } from './controllers/auth.controller.js';
-import { getMenu, updateMenuItem } from './controllers/menu.controller.js';
+import { getMenu, updateMenuItem, createMenuItem, deleteMenuItem } from './controllers/menu.controller.js';
 import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable } from './controllers/tables.controller.js';
 import {
   createOrder,
@@ -61,7 +61,9 @@ app.get('/api/auth/check', authMiddleware, checkAuth);
 
 // Menu
 app.get('/api/menu', getMenu);
-app.patch('/api/menu/:id', authMiddleware, adminOnly, updateMenuItem);
+app.post('/api/menu', authMiddleware, adminOnly, createMenuItem);
+app.patch('/api/menu/:id', authMiddleware, updateMenuItem);
+app.delete('/api/menu/:id', authMiddleware, adminOnly, deleteMenuItem);
 
 // Tables
 app.get('/api/tables', getTables);
@@ -127,6 +129,57 @@ const runAutoCleanup = async () => {
 // Run once on startup, then every 48 h
 runAutoCleanup();
 setInterval(runAutoCleanup, TWO_DAYS_MS);
+
+// Starters Migration: Automatically separate starters/soups from Dinner into a new 'Starters' category
+const runStartersMigration = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    let startersCat = await prisma.menuCategory.findFirst({
+      where: { name: 'Starters' }
+    });
+    if (!startersCat) {
+      startersCat = await prisma.menuCategory.create({
+        data: { name: 'Starters', displayOrder: 4 }
+      });
+      console.log('✅ Created "Starters" menu category.');
+    }
+
+    const dinnerCat = await prisma.menuCategory.findFirst({
+      where: { name: 'Dinner' }
+    });
+    if (dinnerCat) {
+      const migrated = await prisma.menuItem.updateMany({
+        where: {
+          categoryId: dinnerCat.id,
+          OR: [
+            { name: { contains: '65' } },
+            { name: { contains: 'Pepper Fry' } },
+            { name: { contains: 'Chilly' } },
+            { name: { contains: 'Manchurian' } },
+            { name: { contains: 'Soup' } },
+            { name: { contains: 'Fries' } },
+            { name: { contains: 'Finger' } },
+            { name: { contains: 'Lollipop' } },
+            { name: { contains: 'Popcorn' } },
+            { name: { contains: 'Tikka' } },
+            { name: { equals: 'Pallipalayam Mushroom' } },
+            { name: { equals: 'Pallipalayam Gobi' } },
+            { name: { equals: 'Pallipalayam Paneer' } },
+          ]
+        },
+        data: {
+          categoryId: startersCat.id
+        }
+      });
+      if (migrated.count > 0) {
+        console.log(`✅ Migrated ${migrated.count} starter item(s) from Dinner to Starters category.`);
+      }
+    }
+  } catch (err) {
+    console.error('Starters migration failed:', err);
+  }
+};
+runStartersMigration();
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {

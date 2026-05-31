@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { generateBillNumber, TAX_RATE } from '../lib/utils.js';
+import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
 export async function createOrder(req: Request, res: Response) {
   try {
@@ -62,12 +63,25 @@ export async function createOrder(req: Request, res: Response) {
 
 export async function getOrders(req: Request, res: Response) {
   try {
-    const orders = await prisma.order.findMany({
-      where: {
+    const authReq = req as AuthenticatedRequest;
+    const { status } = req.query;
+
+    let whereClause: any = {
+      status: {
+        notIn: ['PAID', 'CANCELLED']
+      }
+    };
+
+    if (status === 'completed') {
+      whereClause = {
         status: {
-          notIn: ['PAID', 'CANCELLED']
+          in: ['SERVED', 'PENDING', 'PAID']
         }
-      },
+      };
+    }
+
+    const orders = await prisma.order.findMany({
+      where: whereClause,
       include: {
         table: true,
         bill: true,
@@ -78,9 +92,26 @@ export async function getOrders(req: Request, res: Response) {
         },
       },
       orderBy: {
-        createdAt: 'asc',
+        createdAt: status === 'completed' ? 'desc' : 'asc',
       },
     });
+
+    if (authReq.username !== 'admin') {
+      const sanitizedOrders = orders.map(order => ({
+        ...order,
+        total: 0,
+        bill: null,
+        items: order.items.map(item => ({
+          ...item,
+          price: 0,
+          menuItem: {
+            ...item.menuItem,
+            price: 0
+          }
+        }))
+      }));
+      return res.json(sanitizedOrders);
+    }
 
     return res.json(orders);
   } catch (error) {
@@ -92,6 +123,7 @@ export async function getOrders(req: Request, res: Response) {
 export async function getOrderById(req: Request, res: Response) {
   try {
     const { id } = req.params;
+    const authReq = req as AuthenticatedRequest;
 
     const order = await prisma.order.findUnique({
       where: { id },
@@ -108,6 +140,23 @@ export async function getOrderById(req: Request, res: Response) {
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (authReq.username !== 'admin') {
+      const sanitizedOrder = {
+        ...order,
+        total: 0,
+        bill: null,
+        items: order.items.map(item => ({
+          ...item,
+          price: 0,
+          menuItem: {
+            ...item.menuItem,
+            price: 0
+          }
+        }))
+      };
+      return res.json(sanitizedOrder);
     }
 
     return res.json(order);

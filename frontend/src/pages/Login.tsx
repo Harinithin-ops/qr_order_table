@@ -85,7 +85,7 @@ export default function LoginPage() {
             <div className="text-xs text-gray-500 text-center mt-4 space-y-1 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
               <p className="font-semibold text-gray-600">Demo Accounts:</p>
               <p>Admin: <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">admin</span> / <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">kavitha2024</span></p>
-              <p>Server: <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server</span> / <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server2024</span></p>
+              <p>Waiter: <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server</span> / <span className="font-mono bg-white px-1 border rounded font-semibold text-gray-700">server2024</span></p>
             </div>
           </form>
         </div>

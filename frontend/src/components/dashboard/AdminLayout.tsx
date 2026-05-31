@@ -43,10 +43,11 @@ export default function AdminLayout() {
   }, []);
 
   useEffect(() => {
-    if (userRole === 'server' && ['/dashboard/history', '/admin/menu', '/admin/qr'].includes(location.pathname)) {
-      navigate('/dashboard', { replace: true });
+    // If a waiter (server role) somehow reaches admin routes, redirect them to the waiter panel
+    if (userRole === 'server') {
+      navigate('/waiter', { replace: true });
     }
-  }, [userRole, location.pathname, navigate]);
+  }, [userRole, navigate]);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -186,14 +187,14 @@ export default function AdminLayout() {
           <div className="flex items-center justify-between px-3 py-3 rounded-xl bg-gray-900/40 border border-gray-900 mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center font-bold text-xs text-red-500 uppercase">
-                {userRole === 'admin' ? 'AD' : 'SV'}
+                {userRole === 'admin' ? 'AD' : 'WT'}
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-gray-200 truncate">
-                  {userRole === 'admin' ? 'Administrator' : 'Server Staff'}
+                  {userRole === 'admin' ? 'Administrator' : 'Waiter'}
                 </p>
                 <p className="text-[10px] text-gray-500 truncate">
-                  {userRole === 'admin' ? 'Super Admin' : 'Order Prep Staff'}
+                  {userRole === 'admin' ? 'Super Admin' : 'Waiter Staff'}
                 </p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Edit2, Search, Check, X, AlertTriangle } from 'lucide-react';
+import { Activity, Edit2, Search, Check, X, AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { HOTEL_NAME, formatCurrency } from '@/lib/utils';
 import { MenuCategory, MenuItem } from '@/types';
 
@@ -17,6 +17,17 @@ export default function AdminMenuPage() {
 
   // Availability updating states
   const [updatingAvailabilityId, setUpdatingAvailabilityId] = useState<string | null>(null);
+
+  // Add Dish states
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addDescription, setAddDescription] = useState('');
+  const [addPrice, setAddPrice] = useState('');
+  const [addCategoryId, setAddCategoryId] = useState('');
+  const [addImage, setAddImage] = useState('');
+  const [addPrepTime, setAddPrepTime] = useState('15');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addingItem, setAddingItem] = useState(false);
 
   const fetchMenu = async () => {
     try {
@@ -46,7 +57,6 @@ export default function AdminMenuPage() {
       });
 
       if (res.ok) {
-        // Update local state
         setCategories(prev => 
           prev.map(cat => ({
             ...cat,
@@ -97,7 +107,6 @@ export default function AdminMenuPage() {
       });
 
       if (res.ok) {
-        // Update local state
         setCategories(prev => 
           prev.map(cat => ({
             ...cat,
@@ -119,6 +128,99 @@ export default function AdminMenuPage() {
     }
   };
 
+  const handleDeleteItem = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${name}"? This will also remove any historical order references.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/menu/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        // Update local state
+        setCategories(prev => 
+          prev.map(cat => ({
+            ...cat,
+            items: cat.items.filter(item => item.id !== id)
+          }))
+        );
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to delete dish');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while deleting the dish');
+    }
+  };
+
+  const handleAddDishSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError(null);
+
+    const priceNum = parseFloat(addPrice);
+    if (isNaN(priceNum) || priceNum < 0) {
+      setAddError('Please enter a valid price');
+      return;
+    }
+
+    if (!addCategoryId) {
+      setAddError('Please select a category');
+      return;
+    }
+
+    setAddingItem(true);
+    try {
+      const res = await fetch('/api/menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: addName,
+          description: addDescription,
+          price: priceNum,
+          categoryId: addCategoryId,
+          image: addImage || null,
+          prepTime: parseInt(addPrepTime, 10),
+          tags: []
+        })
+      });
+
+      if (res.ok) {
+        const newItem = await res.json();
+        
+        setCategories(prev => 
+          prev.map(cat => {
+            if (cat.id === addCategoryId) {
+              return {
+                ...cat,
+                items: [...cat.items, newItem]
+              };
+            }
+            return cat;
+          })
+        );
+
+        setShowAddModal(false);
+        setAddName('');
+        setAddDescription('');
+        setAddPrice('');
+        setAddCategoryId('');
+        setAddImage('');
+        setAddPrepTime('15');
+      } else {
+        const errData = await res.json();
+        setAddError(errData.error || 'Failed to add dish');
+      }
+    } catch (err) {
+      console.error(err);
+      setAddError('An error occurred while creating the dish');
+    } finally {
+      setAddingItem(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8 flex justify-center min-h-screen bg-gray-50 items-center">
@@ -135,6 +237,7 @@ export default function AdminMenuPage() {
   const filteredItems = allItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
     const matchesCategory = activeCategory === 'all' || item.categoryId === activeCategory;
     return matchesSearch && matchesCategory;
   });
@@ -145,8 +248,17 @@ export default function AdminMenuPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-gray-200 pb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 font-serif">Menu Management</h1>
-          <p className="text-gray-500 mt-1">Manage food item availability, pricing, and view details.</p>
+          <p className="text-gray-500 mt-1">Manage food item availability, pricing, and create new dishes across categories.</p>
         </div>
+        <button
+          onClick={() => {
+            setAddError(null);
+            setShowAddModal(true);
+          }}
+          className="self-start md:self-auto bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-md shadow-red-600/10 active:scale-95 transition"
+        >
+          <Plus size={18} /> Add New Dish
+        </button>
       </div>
 
       {/* Filters and Search */}
@@ -155,7 +267,7 @@ export default function AdminMenuPage() {
         <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-none">
           <button
             onClick={() => setActiveCategory('all')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition whitespace-nowrap ${
               activeCategory === 'all'
                 ? 'bg-red-600 text-white shadow-sm shadow-red-600/10'
                 : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
@@ -163,11 +275,12 @@ export default function AdminMenuPage() {
           >
             All Items
           </button>
+          
           {categories.map(cat => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition whitespace-nowrap ${
                 activeCategory === cat.id
                   ? 'bg-red-600 text-white shadow-sm shadow-red-600/10'
                   : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
@@ -186,12 +299,12 @@ export default function AdminMenuPage() {
             placeholder="Search food item..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 hover:bg-gray-100/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 hover:bg-gray-100/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
           />
         </div>
       </div>
 
-      {/* Menu Items Table / Grid */}
+      {/* Menu Items Table */}
       {filteredItems.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
           <div className="mx-auto w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 mb-3">
@@ -210,6 +323,7 @@ export default function AdminMenuPage() {
                   <th className="px-6 py-4">Category</th>
                   <th className="px-6 py-4 text-center">Availability</th>
                   <th className="px-6 py-4 text-right">Price</th>
+                  <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
@@ -318,10 +432,179 @@ export default function AdminMenuPage() {
                         </div>
                       )}
                     </td>
+
+                    {/* Actions */}
+                    <td className="px-6 py-4 text-center">
+                      <button
+                        onClick={() => handleDeleteItem(item.id, item.name)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 transition active:scale-90"
+                        title="Delete Dish"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Add Dish Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto pt-10 md:pt-16">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 animate-slide-up mb-10">
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100">
+              <h3 className="font-bold text-xl text-gray-900 font-serif">Add New Menu Dish</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddDishSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Dish Name */}
+                <div className="md:col-span-2">
+                  <label htmlFor="dish-name" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Dish Name *
+                  </label>
+                  <input
+                    id="dish-name"
+                    type="text"
+                    required
+                    placeholder="e.g. Garlic Butter Naan"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                    disabled={addingItem}
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="md:col-span-2">
+                  <label htmlFor="dish-desc" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Description *
+                  </label>
+                  <textarea
+                    id="dish-desc"
+                    required
+                    rows={2}
+                    placeholder="e.g. Soft clay-oven naan brushed with premium butter."
+                    value={addDescription}
+                    onChange={(e) => setAddDescription(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm resize-none"
+                    disabled={addingItem}
+                  />
+                </div>
+
+                {/* Price */}
+                <div>
+                  <label htmlFor="dish-price" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Price (INR) *
+                  </label>
+                  <input
+                    id="dish-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 120"
+                    value={addPrice}
+                    onChange={(e) => setAddPrice(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                    disabled={addingItem}
+                  />
+                </div>
+
+                {/* Category Selection */}
+                <div>
+                  <label htmlFor="dish-category" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Category *
+                  </label>
+                  <select
+                    id="dish-category"
+                    required
+                    value={addCategoryId}
+                    onChange={(e) => setAddCategoryId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                    disabled={addingItem}
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Image URL */}
+                <div>
+                  <label htmlFor="dish-image" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Image URL (Optional)
+                  </label>
+                  <input
+                    id="dish-image"
+                    type="url"
+                    placeholder="e.g. https://images.unsplash.com/..."
+                    value={addImage}
+                    onChange={(e) => setAddImage(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                    disabled={addingItem}
+                  />
+                </div>
+
+                {/* Prep Time */}
+                <div>
+                  <label htmlFor="dish-preptime" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Prep Time (Minutes)
+                  </label>
+                  <input
+                    id="dish-preptime"
+                    type="number"
+                    min="1"
+                    placeholder="15"
+                    value={addPrepTime}
+                    onChange={(e) => setAddPrepTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                    disabled={addingItem}
+                  />
+                </div>
+              </div>
+
+              {addError && (
+                <p className="text-xs font-semibold text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-100 flex items-center gap-1.5">
+                  <AlertTriangle size={14} /> {addError}
+                </p>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-3 border-t border-gray-100 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+                  disabled={addingItem}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-1 shadow-sm"
+                  disabled={addingItem}
+                >
+                  {addingItem ? (
+                    <>
+                      <Activity className="animate-spin" size={16} /> Creating…
+                    </>
+                  ) : (
+                    'Add Dish'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
