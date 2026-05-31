@@ -135,7 +135,7 @@ export default function CustomerPayPage() {
               <span>{formatCurrency(bill.subtotal)}</span>
             </div>
             <div className="flex justify-between text-xs text-gray-500">
-              <span>GST ({bill.taxRate * 100}%)</span>
+              <span>GST ({bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%)</span>
               <span>{formatCurrency(bill.taxAmount)}</span>
             </div>
             {bill.discount > 0 && (

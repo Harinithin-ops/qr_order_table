@@ -70,7 +70,6 @@ export interface BillData {
   id: string;
   orderId: string;
   subtotal: number;
-  taxRate: number;
   taxAmount: number;
   serviceCharge: number;
   discount: number;

@@ -128,7 +128,7 @@ const compileReceipt = (bill: any, showGST: boolean): Uint8Array => {
   
   escpos.writeLine(formatVal('Subtotal:', bill.subtotal));
   if (showGST) {
-    escpos.writeLine(formatVal(`GST (${bill.taxRate * 100}%):`, bill.taxAmount));
+    escpos.writeLine(formatVal(`GST (${bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%):`, bill.taxAmount));
   }
   if (bill.discount > 0) {
     escpos.writeLine(formatVal('Discount:', bill.discount));
@@ -726,7 +726,7 @@ export default function BillMachinePage() {
                   
                   {showGST && (
                     <div className="flex justify-between">
-                      <span>GST ({selectedBill.taxRate * 100}%):</span>
+                      <span>GST ({selectedBill.subtotal > 0 ? ((selectedBill.taxAmount / selectedBill.subtotal) * 100).toFixed(0) : 2}%):</span>
                       <span>{formatCurrency(selectedBill.taxAmount)}</span>
                     </div>
                   )}

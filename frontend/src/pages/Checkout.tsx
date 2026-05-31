@@ -36,10 +36,6 @@ export default function CheckoutPage() {
 
   const { lastEvent } = useEventSource('/api/events');
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
   // Re-fetch the bill if it already exists
   const refetchBill = useCallback(async (billId: string) => {
     const res = await fetch(`/api/bills/${billId}`);
@@ -49,6 +45,20 @@ export default function CheckoutPage() {
       if (data.paymentMethod) setPaymentMethod(data.paymentMethod as any);
     }
   }, []);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // On mount: restore an existing bill from sessionStorage if the user refreshed or came back
+  useEffect(() => {
+    if (!tableId) return;
+    const savedBillId = sessionStorage.getItem(`kh_checkout_bill_${tableId}`);
+    if (savedBillId) {
+      refetchBill(savedBillId);
+    }
+  }, [tableId, refetchBill]);
+
 
   // SSE: refresh bill on updates
   useEffect(() => {
@@ -74,6 +84,8 @@ export default function CheckoutPage() {
         return;
       }
       setBill(data);
+      // After checkout succeeds, persist the bill ID so refreshing restores the bill
+      sessionStorage.setItem(`kh_checkout_bill_${tableId}`, data.id);
       // After checkout succeeds, clear all per-order session keys and store the merged bill's orderId
       // so that the menu banners know there's now one unified order
       sessionStorage.removeItem(`kh_orders_${tableId}`);
@@ -106,11 +118,12 @@ export default function CheckoutPage() {
     }
   };
 
-  // When paid, clear all session order data
+  // When paid, clear all session order data and the saved bill ID
   useEffect(() => {
     if (bill?.paymentStatus === 'PAID' && tableId) {
       sessionStorage.removeItem(`kh_orders_${tableId}`);
       sessionStorage.removeItem(`kh_order_${tableId}`);
+      sessionStorage.removeItem(`kh_checkout_bill_${tableId}`);
     }
   }, [bill?.paymentStatus, tableId]);
 
@@ -214,7 +227,7 @@ export default function CheckoutPage() {
                 <span>{formatCurrency(bill.subtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span>GST ({(bill.taxRate ?? 0.02) * 100}%)</span>
+                <span>GST ({bill.taxAmount > 0 && bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%)</span>
                 <span>{formatCurrency(bill.taxAmount)}</span>
               </div>
               {bill.discount > 0 && (

@@ -111,11 +111,13 @@ export default function TrackOrderPage() {
   const isPending = order.status === 'PENDING';
   const isPaid = order.status === 'PAID';
   
-  // Calculate tax and totals on-the-fly if bill is not generated yet
-  const taxRate = 0.02; // Standard 2% GST
-  const subtotal = order.total;
-  const taxAmount = subtotal * taxRate;
-  const totalAmount = subtotal + taxAmount;
+  // Use bill amounts when available (more accurate); fall back to live computation
+  const taxRate = 0.02; // 2% GST
+  const subtotal = order.bill?.subtotal ?? order.total;
+  const taxAmount = order.bill?.taxAmount ?? (subtotal * taxRate);
+  const totalAmount = order.bill?.total ?? (subtotal + taxAmount);
+  // Determine if item-level prices are stored (not zeroed out)
+  const hasItemPrices = order.items.some(i => i.price > 0);
 
   const getStepIcon = (status: string) => {
     switch (status) {
@@ -295,36 +297,50 @@ export default function TrackOrderPage() {
                         *{item.specialInstructions}
                       </p>
                     )}
+                    <p className="text-[10px] text-gray-400 mt-0.5">Qty: {item.quantity}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-bold text-gray-900">
-                      {item.quantity} x {formatCurrency(item.price)}
-                    </p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {formatCurrency(item.price * item.quantity)}
-                    </p>
+                    {item.price > 0 ? (
+                      <>
+                        <p className="text-xs font-bold text-gray-900">
+                          {item.quantity} × {formatCurrency(item.price)}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {formatCurrency(item.price * item.quantity)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">Price on bill</p>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="border-t border-gray-100 mt-4 pt-4 space-y-1.5 text-xs text-gray-500">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{formatCurrency(subtotal)}</span>
+          {!hasItemPrices && subtotal === 0 ? (
+            <div className="border-t border-gray-100 mt-4 pt-4 text-xs text-gray-400 text-center italic">
+              Prices will be visible on your final bill.
             </div>
-            <div className="flex justify-between">
-              <span>GST ({taxRate * 100}%)</span>
-              <span>{formatCurrency(taxAmount)}</span>
+          ) : (
+            <div className="border-t border-gray-100 mt-4 pt-4 space-y-1.5 text-xs text-gray-500">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>GST ({taxRate * 100}%)</span>
+                <span>{formatCurrency(taxAmount)}</span>
+              </div>
+              
+              <div className="flex justify-between text-sm font-extrabold text-gray-950 border-t border-dashed border-gray-200 pt-2 mt-2">
+                <span>{order.bill ? 'Total' : 'Estimated Total'}</span>
+                <span>{formatCurrency(totalAmount)}</span>
+              </div>
             </div>
-            
-            <div className="flex justify-between text-sm font-extrabold text-gray-950 border-t border-dashed border-gray-200 pt-2 mt-2">
-              <span>Estimated Total</span>
-              <span>{formatCurrency(totalAmount)}</span>
-            </div>
-          </div>
+          )}
         </div>
+
 
         {order.notes && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">

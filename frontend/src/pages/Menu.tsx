@@ -275,14 +275,14 @@ export default function MenuPage() {
                 <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full font-medium">
                   {menuItems.filter(item => 
                     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    item.description.toLowerCase().includes(searchTerm.toLowerCase())
+                    (item.description || '').toLowerCase().includes(searchTerm.toLowerCase())
                   ).length} found
                 </span>
               </div>
               {(() => {
                 const results = menuItems.filter(item => 
                   item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  item.description.toLowerCase().includes(searchTerm.toLowerCase())
+                  (item.description || '').toLowerCase().includes(searchTerm.toLowerCase())
                 );
                 if (results.length === 0) {
                   return (

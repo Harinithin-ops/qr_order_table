@@ -204,7 +204,7 @@ export default function CustomerPaymentPage() {
               <span>{formatCurrency(hasBill ? bill.subtotal : subtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span>GST ({hasBill ? (bill.taxRate * 100) : (taxRate * 100)}%)</span>
+              <span>GST ({hasBill && bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : (taxRate * 100)}%)</span>
               <span>{formatCurrency(hasBill ? bill.taxAmount : taxAmount)}</span>
             </div>
             {hasBill && bill.discount > 0 && (

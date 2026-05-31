@@ -28,29 +28,34 @@ export interface TimingSlot {
 export const CATEGORY_TIMINGS: Record<string, TimingSlot> = {
   breakfast: { start: '06:30', end: '12:30', label: '6:30 AM - 12:30 PM' },
   lunch: { start: '12:30', end: '17:30', label: '12:30 PM - 5:30 PM' },
+  meals: { start: '12:30', end: '17:30', label: '12:30 PM - 5:30 PM' },
   dinner: { start: '17:30', end: '23:30', label: '5:30 PM - 11:30 PM' },
   starters: { start: '12:30', end: '23:30', label: '12:30 PM - 11:30 PM' },
+  snacks: { start: '12:30', end: '23:30', label: '12:30 PM - 11:30 PM' },
 };
 
 export function getCategoryTimingStatus(categoryName: string, date: Date = new Date()) {
   const name = categoryName.toLowerCase().trim();
   const slot = CATEGORY_TIMINGS[name];
   if (!slot) {
+    // Category not in timing map → always available
     return { isOpen: true, label: '', slot: null };
   }
 
-  // Get the current hour and minute in Asia/Kolkata (IST) timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
+  // Get IST time robustly using toLocaleString with en-GB (24h, no ambiguity)
+  const istString = date.toLocaleString('en-GB', {
     timeZone: 'Asia/Kolkata',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   });
-  
-  const formattedString = formatter.format(date);
-  let [hours, minutes] = formattedString.split(':').map(Number);
+
+  // istString is like "13:45" or "09:05"
+  const parts = istString.split(':');
+  let hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
   if (hours === 24) hours = 0;
-  
+
   const currentMinutes = hours * 60 + minutes;
 
   const [startH, startM] = slot.start.split(':').map(Number);
