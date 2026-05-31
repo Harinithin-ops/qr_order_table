@@ -28,7 +28,7 @@ interface ProtectedRouteProps {
 }
 
 function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<'loading' | 'waiter' | 'admin' | 'unauthenticated'>('loading');
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -38,26 +38,35 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
         });
         if (res.ok) {
           const data = await res.json();
-          setIsAuthenticated(data.authenticated);
+          if (!data.authenticated) {
+            setStatus('unauthenticated');
+          } else if (data.username === 'admin') {
+            // Admin is logged in — redirect them away from the waiter portal
+            setStatus('admin');
+          } else {
+            setStatus('waiter');
+          }
         } else {
-          setIsAuthenticated(false);
+          setStatus('unauthenticated');
         }
       } catch (err) {
-        setIsAuthenticated(false);
+        setStatus('unauthenticated');
       }
     };
     checkAuth();
   }, []);
 
-  if (isAuthenticated === null) {
+  if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-amber-50">
         <Activity className="animate-spin text-amber-500" size={32} />
       </div>
     );
   }
 
-  return isAuthenticated ? <>{children}</> : <Navigate to="/waiter-login" replace />;
+  if (status === 'unauthenticated') return <Navigate to="/waiter-login" replace />;
+  if (status === 'admin') return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
 }
 
 interface AdminRouteProps {
@@ -65,7 +74,7 @@ interface AdminRouteProps {
 }
 
 function AdminRoute({ children }: AdminRouteProps) {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<'loading' | 'admin' | 'waiter' | 'unauthenticated'>('loading');
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -75,18 +84,25 @@ function AdminRoute({ children }: AdminRouteProps) {
         });
         if (res.ok) {
           const data = await res.json();
-          setIsAdmin(data.authenticated && data.username === 'admin');
+          if (!data.authenticated) {
+            setStatus('unauthenticated');
+          } else if (data.username === 'admin') {
+            setStatus('admin');
+          } else {
+            // A waiter is logged in — redirect them to their own dashboard
+            setStatus('waiter');
+          }
         } else {
-          setIsAdmin(false);
+          setStatus('unauthenticated');
         }
       } catch (err) {
-        setIsAdmin(false);
+        setStatus('unauthenticated');
       }
     };
     checkAuth();
   }, []);
 
-  if (isAdmin === null) {
+  if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Activity className="animate-spin text-green-600" size={32} />
@@ -94,7 +110,9 @@ function AdminRoute({ children }: AdminRouteProps) {
     );
   }
 
-  return isAdmin ? <>{children}</> : <Navigate to="/login" replace />;
+  if (status === 'unauthenticated') return <Navigate to="/login" replace />;
+  if (status === 'waiter') return <Navigate to="/waiter/orders" replace />;
+  return <>{children}</>;
 }
 
 export default function App() {
