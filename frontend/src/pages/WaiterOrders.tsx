@@ -157,12 +157,31 @@ function WaiterOrderCard({
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
+interface Table {
+  id: string;
+  tableNumber: number;
+  slug: string;
+  active: boolean;
+  callingWaiter: boolean;
+}
+
 export default function WaiterOrders() {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [paymentNotice, setPaymentNotice] = useState<{ tableNumber: number | null; method: string | null } | null>(null);
   const { lastEvent } = useEventSource('/api/events');
+
+  const [tables, setTables] = useState<Table[]>([]);
+  const [selectedTables, setSelectedTables] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('kh_waiter_tables');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectionError, setSelectionError] = useState('');
 
   const fetchOrders = async () => {
     try {
@@ -175,7 +194,19 @@ export default function WaiterOrders() {
     }
   };
 
-  useEffect(() => { fetchOrders(); }, []);
+  const fetchTables = async () => {
+    try {
+      const res = await fetch('/api/tables');
+      if (res.ok) setTables(await res.json());
+    } catch (e) {
+      console.error('Failed to fetch tables:', e);
+    }
+  };
+
+  useEffect(() => {
+    void fetchOrders();
+    void fetchTables();
+  }, []);
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -184,13 +215,22 @@ export default function WaiterOrders() {
     void fetchOrders();
 
     if (lastEvent.type === 'NEW_ORDER') {
-      try {
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-        void audio.play().catch(() => {});
-      } catch { /* ignore */ }
+      const targetTableId = lastEvent.data?.tableId;
+      if (typeof targetTableId === 'string' && selectedTables.includes(targetTableId)) {
+        try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          void audio.play().catch(() => {});
+        } catch { /* ignore */ }
+      }
     }
 
     if (lastEvent.type === 'PAYMENT_SUBMITTED' || (lastEvent.type === 'ORDER_UPDATE' && lastEvent.data.status === 'PAID')) {
+      const targetTableId = lastEvent.data?.tableId;
+      // Only display payment notices and play payment sounds if the table is maintained by this waiter
+      if (typeof targetTableId === 'string' && !selectedTables.includes(targetTableId)) {
+        return;
+      }
+
       try {
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/1389/1389-preview.mp3');
         void audio.play().catch(() => {});
@@ -205,9 +245,28 @@ export default function WaiterOrders() {
       const t = window.setTimeout(() => setPaymentNotice(null), 12000);
       return () => clearTimeout(t);
     }
-  }, [lastEvent]);
+  }, [lastEvent, selectedTables]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  /** Toggles a table selection, restricting selection to at most 5 tables */
+  const handleToggleTable = (tableId: string) => {
+    setSelectedTables(prev => {
+      let next;
+      if (prev.includes(tableId)) {
+        next = prev.filter(id => id !== tableId);
+      } else {
+        if (prev.length >= 5) {
+          setSelectionError("You shouldn't select more than 5 tables.");
+          return prev;
+        }
+        next = [...prev, tableId];
+      }
+      setSelectionError('');
+      localStorage.setItem('kh_waiter_tables', JSON.stringify(next));
+      return next;
+    });
+  };
 
   /** Advance order to any status */
   const handleUpdateStatus = async (orderId: string, status: string) => {
@@ -243,9 +302,6 @@ export default function WaiterOrders() {
     }
   };
 
-  /** Generate unified bill for a table — admin only, removed from waiter view */
-  // const handleCreateBill = ...
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -254,10 +310,10 @@ export default function WaiterOrders() {
     );
   }
 
-  // Only show orders that are still being worked on — SERVED/PENDING/PAID
-  // move to Completed Orders section after the waiter marks them done
+  // Filter active live orders by selected tables!
   const activeOrders = orders.filter(
-    o => !['SERVED', 'PENDING', 'PAID', 'CANCELLED'].includes(o.status)
+    o => !['SERVED', 'PENDING', 'PAID', 'CANCELLED'].includes(o.status) &&
+         selectedTables.includes(o.tableId)
   );
   const readyCount = activeOrders.filter(o => o.status === 'READY').length;
 
@@ -297,8 +353,82 @@ export default function WaiterOrders() {
         </div>
       )}
 
+      {/* Beautiful Table Selection Grid */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-8 animate-slide-up">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Utensils size={18} className="text-amber-500" />
+              Waiter Table Assignments
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Select between <strong>2 and 5 tables</strong> to monitor. Selection is persisted.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+              selectedTables.length >= 2 && selectedTables.length <= 5
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
+                : 'bg-amber-50 text-amber-700 border border-amber-250'
+            }`}>
+              {selectedTables.length} selected
+            </span>
+          </div>
+        </div>
+
+        {selectionError && (
+          <div className="mb-4 px-4 py-3 text-xs font-bold text-red-800 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-bounce">
+            <Bell size={12} className="text-red-500 shrink-0" />
+            {selectionError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+          {tables.map(table => {
+            const isSelected = selectedTables.includes(table.id);
+            return (
+              <button
+                key={table.id}
+                type="button"
+                onClick={() => handleToggleTable(table.id)}
+                className={`p-3.5 rounded-xl font-bold text-center border transition-all duration-250 active:scale-95 flex flex-col items-center justify-center gap-1.5 shadow-sm relative overflow-hidden ${
+                  isSelected
+                    ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
+                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
+                }`}
+              >
+                <span className="text-[10px] uppercase tracking-wider opacity-85">Table</span>
+                <span className="text-lg font-black leading-none">{table.tableNumber}</span>
+                {isSelected && (
+                  <span className="absolute top-1.5 right-1.5 text-white bg-white/20 p-0.5 rounded-full">
+                    <Check size={10} strokeWidth={3} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Table Selection Guide Banner if invalid count */}
+      {selectedTables.length < 2 && (
+        <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600">
+              <Activity size={24} className="animate-spin" />
+            </div>
+            <div>
+              <h3 className="font-bold text-amber-900 text-sm">Table Maintenance Mode</h3>
+              <p className="text-xs text-amber-700 mt-0.5">
+                You must select between <strong>2 and 5 tables</strong> from the grid above to view and manage live orders.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ready-to-serve banner */}
-      {readyCount > 0 && (
+      {readyCount > 0 && selectedTables.length >= 2 && (
         <div className="mb-5 bg-emerald-500 text-white rounded-2xl px-4 py-3 flex items-center gap-3 shadow-md shadow-emerald-200">
           <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center shrink-0 animate-bounce">
             <CheckCircle2 size={20} />
@@ -310,34 +440,46 @@ export default function WaiterOrders() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Live Orders</h1>
-          <p className="text-sm text-gray-500">Tap <strong>Mark as Served</strong> once food is delivered to the table</p>
-        </div>
-        <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1 self-start sm:self-auto overflow-hidden">
-          <div className="px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 border-r border-gray-100">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="font-semibold text-sm md:text-base">{activeOrders.length}</span>
-            <span className="text-xs md:text-sm text-gray-600">Active</span>
+      {selectedTables.length >= 2 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Live Orders</h1>
+            <p className="text-sm text-gray-500">Tap <strong>Mark as Served</strong> once food is delivered to the table</p>
           </div>
-          {readyCount > 0 && (
-            <div className="px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-semibold text-emerald-700">{readyCount} Ready</span>
+          <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1 self-start sm:self-auto overflow-hidden">
+            <div className="px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-2 border-r border-gray-100">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="font-semibold text-sm md:text-base">{activeOrders.length}</span>
+              <span className="text-xs md:text-sm text-gray-600">Active</span>
             </div>
-          )}
+            {readyCount > 0 && (
+              <div className="px-3 md:px-4 py-1.5 md:py-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-semibold text-emerald-700">{readyCount} Ready</span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Orders Grid */}
-      {activeOrders.length === 0 ? (
+      {selectedTables.length < 2 ? (
+        <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-gray-300">
+          <div className="mx-auto w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center text-amber-500 mb-4">
+            <Utensils size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Live Orders Locked</h3>
+          <p className="text-gray-500 text-sm max-w-sm mx-auto">
+            Please select at least 2 tables in the assignments panel above to start viewing and maintaining orders.
+          </p>
+        </div>
+      ) : activeOrders.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-gray-300">
           <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 mb-4">
             <BellOff size={32} />
           </div>
           <h3 className="text-xl font-bold text-gray-900 mb-2">No active orders</h3>
-          <p className="text-gray-500">New orders from tables will appear here instantly.</p>
+          <p className="text-gray-500">New orders from your selected tables will appear here instantly.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">

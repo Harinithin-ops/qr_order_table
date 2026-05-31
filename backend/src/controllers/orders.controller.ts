@@ -45,6 +45,129 @@ export async function createOrder(req: Request, res: Response) {
       }
     }
 
+    // Server-Side Same-Name Order Merging
+    // Check if the new order specifies a customer name
+    const match = notes ? notes.match(/^Name:\s*([^|]+)/) : null;
+    const customerName = match ? match[1].trim() : null;
+
+    if (customerName) {
+      // Find active orders at this table (status not PAID or CANCELLED)
+      const activeOrders = await prisma.order.findMany({
+        where: {
+          tableId: table.id,
+          status: {
+            notIn: ['PAID', 'CANCELLED']
+          }
+        },
+        include: {
+          items: true
+        }
+      });
+
+      // Find an order where the notes start with "Name: [customerName]" (case-insensitive)
+      const existingOrder = activeOrders.find(o => {
+        const existingNotes = o.notes || '';
+        const m = existingNotes.match(/^Name:\s*([^|]+)/);
+        if (m) {
+          return m[1].trim().toLowerCase() === customerName.toLowerCase();
+        }
+        return false;
+      });
+
+      if (existingOrder) {
+        // Perform order merge inside a transaction
+        const mergedOrder = await prisma.$transaction(async (tx) => {
+          // 1. Process items
+          for (const item of items) {
+            // Find duplicate item in existing order with the same special instructions
+            const existingItem = existingOrder.items.find(
+              ei => ei.menuItemId === item.menuItemId && 
+                    (ei.specialInstructions || '').trim().toLowerCase() === (item.specialInstructions || '').trim().toLowerCase()
+            );
+
+            if (existingItem) {
+              // Increment quantity of existing item
+              await tx.orderItem.update({
+                where: { id: existingItem.id },
+                data: {
+                  quantity: existingItem.quantity + item.quantity
+                }
+              });
+            } else {
+              // Add new item to the existing order
+              await tx.orderItem.create({
+                data: {
+                  orderId: existingOrder.id,
+                  menuItemId: item.menuItemId,
+                  quantity: item.quantity,
+                  price: item.price,
+                  specialInstructions: item.specialInstructions
+                }
+              });
+            }
+          }
+
+          // 2. Concatenate notes suffix elegantly
+          let mergedNotes = existingOrder.notes || '';
+          const newNotesMatch = notes ? notes.match(/\|\s*Notes:\s*(.+)$/) : null;
+          const newNotesContent = newNotesMatch ? newNotesMatch[1].trim() : null;
+
+          if (newNotesContent) {
+            const existingNotesMatch = (existingOrder.notes || '').match(/\|\s*Notes:\s*(.+)$/);
+            const existingNotesContent = existingNotesMatch ? existingNotesMatch[1].trim() : null;
+
+            if (existingNotesContent) {
+              if (!existingNotesContent.toLowerCase().includes(newNotesContent.toLowerCase())) {
+                mergedNotes = `Name: ${customerName} | Notes: ${existingNotesContent}; ${newNotesContent}`;
+              }
+            } else {
+              mergedNotes = `Name: ${customerName} | Notes: ${newNotesContent}`;
+            }
+          }
+
+          // 3. Recalculate total price
+          const updatedItems = await tx.orderItem.findMany({
+            where: { orderId: existingOrder.id }
+          });
+          const newTotal = updatedItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+
+          // 4. Update the order with the new total, merged notes, and reset status if needed
+          let newStatus = existingOrder.status;
+          if (['READY', 'SERVED'].includes(existingOrder.status)) {
+            newStatus = 'PLACED';
+          }
+
+          const updated = await tx.order.update({
+            where: { id: existingOrder.id },
+            data: {
+              total: newTotal,
+              notes: mergedNotes,
+              status: newStatus
+            },
+            include: {
+              table: true,
+              items: {
+                include: {
+                  menuItem: true
+                }
+              }
+            }
+          });
+
+          return updated;
+        });
+
+        // Emit update event to sync dashboard
+        eventEmitter.emit('ORDER_UPDATE', { 
+          orderId: mergedOrder.id, 
+          status: mergedOrder.status, 
+          tableId: mergedOrder.tableId 
+        });
+
+        return res.status(200).json(mergedOrder);
+      }
+    }
+
     const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
 
     const order = await prisma.order.create({
