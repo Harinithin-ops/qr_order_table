@@ -162,23 +162,6 @@ export async function getOrderById(req: Request, res: Response) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    if (authReq.username !== 'admin') {
-      const sanitizedOrder = {
-        ...order,
-        total: 0,
-        bill: null,
-        items: order.items.map(item => ({
-          ...item,
-          price: 0,
-          menuItem: {
-            ...item.menuItem,
-            price: 0
-          }
-        }))
-      };
-      return res.json(sanitizedOrder);
-    }
-
     return res.json(order);
   } catch (error) {
     console.error('Failed to fetch order:', error);
