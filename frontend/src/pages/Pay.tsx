@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { BillData, OrderWithItems } from '@/types';
 import { BillDocument } from '@/components/billing/BillPDF';
 import { FileDown, Activity, CheckCircle2, QrCode, Link as LinkIcon, Send } from 'lucide-react';
-import { PDFDownloadLink } from '@react-pdf/renderer';
+import { PDFDownloadLink, pdf } from '@react-pdf/renderer';
 import { formatCurrency, HOTEL_UPI_ID, HOTEL_NAME } from '@/lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { useEventSource } from '@/hooks/useEventSource';
@@ -73,6 +73,29 @@ export default function CustomerPayPage() {
 
   const isPaid = bill.paymentStatus === 'PAID';
   const isAwaiting = bill.paymentStatus === 'AWAITING_CONFIRMATION';
+
+  // Automatically trigger PDF receipt download on customer phone when payment succeeds
+  useEffect(() => {
+    if (isPaid && bill) {
+      const triggerAutoDownload = async () => {
+        try {
+          const blob = await pdf(<BillDocument bill={bill} />).toBlob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${bill.billNumber}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('Automatic bill download failed:', err);
+        }
+      };
+      const t = setTimeout(triggerAutoDownload, 800);
+      return () => clearTimeout(t);
+    }
+  }, [isPaid, bill?.id]);
   
   // UPI Deep link standard format
   const upiLink = `upi://pay?pa=${HOTEL_UPI_ID}&pn=${encodeURIComponent(HOTEL_NAME)}&aid=uGICAgKCs-PbMfg&am=${bill.total}&cu=INR&tn=Bill%20${bill.billNumber}`;
