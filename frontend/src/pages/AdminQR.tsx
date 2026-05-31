@@ -61,7 +61,8 @@ export default function AdminQR() {
       const res = await fetch('/api/tables', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableNumber: num })
+        body: JSON.stringify({ tableNumber: num }),
+        credentials: 'include'
       });
       
       if (res.ok) {
@@ -88,7 +89,8 @@ export default function AdminQR() {
     
     try {
       const res = await fetch(`/api/tables/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
       
       if (res.ok) {
