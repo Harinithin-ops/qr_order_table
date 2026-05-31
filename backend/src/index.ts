@@ -29,7 +29,11 @@ import {
   mergeBills,
   tableCheckout,
   deleteBill,
-  cleanupOldRecords
+  cleanupOldRecords,
+  createBillWaiter,
+  getBillsWaiter,
+  addCustomItemToBill,
+  markBillPaid
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword } from './controllers/waiters.controller.js';
@@ -97,7 +101,7 @@ app.post('/api/orders/:id/mark-received', markReceived);
 app.post('/api/orders/:id/generate-bill', generateBillForOrder);
 app.post('/api/orders/:id/cancel', cancelOrder);
 
-// Bills
+// Bills (Admin only)
 app.post('/api/bills', authMiddleware, adminOnly, createBill);
 app.get('/api/bills', authMiddleware, adminOnly, getBills);
 // NOTE: static routes must come before :id to avoid 'cleanup' being matched as an id
@@ -108,6 +112,12 @@ app.delete('/api/bills/:id', authMiddleware, adminOnly, deleteBill);
 app.post('/api/bills/:id/pay', payBill);
 app.post('/api/bills/:id/items', authMiddleware, adminOnly, addExtraItemToBill);
 app.post('/api/bills/merge', authMiddleware, adminOnly, mergeBills);
+
+// Bills (Waiter accessible — authMiddleware only, no adminOnly)
+app.get('/api/waiter/bills', authMiddleware, getBillsWaiter);
+app.post('/api/waiter/bills', authMiddleware, createBillWaiter);
+app.post('/api/waiter/bills/:id/custom-item', authMiddleware, addCustomItemToBill);
+app.patch('/api/waiter/bills/:id/pay', authMiddleware, markBillPaid);
 
 // Customer-facing unified checkout (merges all orders for a table into 1 bill)
 app.post('/api/tables/:tableId/checkout', tableCheckout);

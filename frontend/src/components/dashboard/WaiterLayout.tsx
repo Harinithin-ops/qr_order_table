@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckCircle2, Menu, X, Utensils, LogOut, BookOpen, User } from 'lucide-react';
+import { LayoutDashboard, CheckCircle2, Menu, X, Utensils, LogOut, BookOpen, User, ClipboardList } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
 import { useEventSource } from '@/hooks/useEventSource';
 
@@ -70,6 +70,12 @@ export default function WaiterLayout() {
       badge: activeCount > 0 ? activeCount : null,
       badgeColor: 'bg-amber-500 text-white',
       badgeTitle: 'Active orders',
+    },
+    {
+      name: 'Order Queue',
+      path: '/waiter/queue',
+      icon: ClipboardList,
+      badge: null,
     },
     {
       name: 'Completed Orders',

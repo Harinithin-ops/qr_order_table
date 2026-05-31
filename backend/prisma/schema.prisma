@@ -94,6 +94,7 @@ model Bill {
   paymentMethod    String?
   paymentReference String?
   billNumber       String   @unique
+  customItems      String   @default("[]")
   createdAt        DateTime @default(now())
 }
 

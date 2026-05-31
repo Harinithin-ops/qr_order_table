@@ -682,3 +682,237 @@ export async function tableCheckout(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to process checkout' });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Waiter-accessible Bill Handlers (no adminOnly guard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/waiter/bills
+ * Create a bill for an order. Waiter-accessible.
+ */
+export async function createBillWaiter(req: Request, res: Response) {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Return existing bill if already created
+    const existingBill = await prisma.bill.findUnique({
+      where: { orderId },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+    if (existingBill) return res.json(existingBill);
+
+    const subtotal = order.total;
+    const taxAmount = subtotal * TAX_RATE;
+    const total = subtotal + taxAmount;
+
+    const bill = await prisma.bill.create({
+      data: {
+        orderId,
+        subtotal,
+        taxAmount,
+        total,
+        billNumber: await generateBillNumber(),
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+
+    // Mark order as PENDING (awaiting payment)
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'PENDING' }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId,
+      status: 'PENDING',
+      tableId: order.tableId,
+      billId: bill.id,
+    });
+
+    return res.json(bill);
+  } catch (error) {
+    console.error('Failed to create waiter bill:', error);
+    return res.status(500).json({ error: 'Failed to create bill' });
+  }
+}
+
+/**
+ * GET /api/waiter/bills
+ * Get all bills for active (non-PAID, non-CANCELLED) orders. Waiter-accessible.
+ */
+export async function getBillsWaiter(req: Request, res: Response) {
+  try {
+    const bills = await prisma.bill.findMany({
+      where: {
+        order: {
+          status: { notIn: ['CANCELLED'] }
+        }
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json(bills);
+  } catch (error) {
+    console.error('Failed to fetch waiter bills:', error);
+    return res.status(500).json({ error: 'Failed to fetch bills' });
+  }
+}
+
+interface CustomItem {
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+/**
+ * POST /api/waiter/bills/:id/custom-item
+ * Add a free-text custom item (no menuItemId) to a bill.
+ * Stored in the `customItems` JSON column on the Bill model.
+ */
+export async function addCustomItemToBill(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { name, price, quantity = 1 } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Item name is required' });
+    }
+    const parsedPrice = Number(price);
+    const parsedQty = Math.max(1, Number(quantity));
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ error: 'Valid price is required' });
+    }
+
+    const bill = await prisma.bill.findUnique({ where: { id } });
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+
+    if (bill.paymentStatus === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a paid bill' });
+    }
+
+    // Parse existing custom items
+    let customItems: CustomItem[] = [];
+    try {
+      customItems = JSON.parse(bill.customItems || '[]');
+    } catch {
+      customItems = [];
+    }
+
+    // Add new item
+    customItems.push({ name: name.trim(), price: parsedPrice, quantity: parsedQty });
+
+    // Recalculate totals
+    const itemTotal = parsedPrice * parsedQty;
+    const newSubtotal = bill.subtotal + itemTotal;
+    const newTaxAmount = newSubtotal * TAX_RATE;
+    const newTotal = Math.max(0, newSubtotal + newTaxAmount - bill.discount);
+
+    const updatedBill = await prisma.bill.update({
+      where: { id },
+      data: {
+        customItems: JSON.stringify(customItems),
+        subtotal: newSubtotal,
+        taxAmount: newTaxAmount,
+        total: newTotal,
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+
+    return res.json(updatedBill);
+  } catch (error) {
+    console.error('Failed to add custom item:', error);
+    return res.status(500).json({ error: 'Failed to add custom item' });
+  }
+}
+
+/**
+ * PATCH /api/waiter/bills/:id/pay
+ * Mark a bill as PAID and update the associated order status.
+ */
+export async function markBillPaid(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { paymentMethod = 'CASH' } = req.body;
+
+    const bill = await prisma.bill.findUnique({
+      where: { id },
+      include: { order: { include: { table: true } } }
+    });
+
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    if (bill.paymentStatus === 'PAID') {
+      return res.status(400).json({ error: 'Bill is already paid' });
+    }
+
+    const updatedBill = await prisma.bill.update({
+      where: { id },
+      data: {
+        paymentStatus: 'PAID',
+        paymentMethod,
+      },
+      include: {
+        order: { include: { table: true, items: { include: { menuItem: true } } } }
+      }
+    });
+
+    // Mark order as PAID
+    await prisma.order.update({
+      where: { id: bill.orderId },
+      data: { status: 'PAID' }
+    });
+
+    // Emit SSE event for real-time dashboard updates
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: bill.orderId,
+      status: 'PAID',
+      tableId: bill.order.tableId,
+      billId: bill.id,
+      tableNumber: bill.order.table.tableNumber,
+    });
+
+    return res.json(updatedBill);
+  } catch (error) {
+    console.error('Failed to mark bill as paid:', error);
+    return res.status(500).json({ error: 'Failed to mark bill as paid' });
+  }
+}
+
