@@ -1,76 +1,91 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { SSEEvent } from '../types';
 
 export function useEventSource(url: string, enabled = true) {
   const [lastEvent, setLastEvent] = useState<SSEEvent | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  const [connected, setConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    if (!enabled) return;
+  const connect = useCallback(() => {
+    if (!mountedRef.current || !enabled) return;
 
-    function connect() {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-
-      const eventSource = new EventSource(url);
-      eventSourceRef.current = eventSource;
-
-      eventSource.onopen = () => {
-        retryCountRef.current = 0;
-        setError(null);
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data) as Record<string, unknown>;
-          const type = parsed.type as SSEEvent['type'];
-          const timestamp =
-            typeof parsed.timestamp === 'string'
-              ? parsed.timestamp
-              : new Date().toISOString();
-          const nested = parsed.data;
-          let data: Record<string, unknown>;
-          if (
-            nested !== undefined &&
-            typeof nested === 'object' &&
-            nested !== null &&
-            !Array.isArray(nested)
-          ) {
-            data = { ...(nested as Record<string, unknown>) };
-          } else {
-            data = { ...parsed };
-            delete data.type;
-            delete data.timestamp;
-          }
-          setLastEvent({ type, data, timestamp });
-        } catch (err) {
-          console.error('Failed to parse SSE event:', err);
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        if (retryCountRef.current < 5) {
-          retryCountRef.current += 1;
-          const timeout = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
-          setTimeout(connect, timeout);
-        } else {
-          setError(new Error('SSE connection failed after retries'));
-        }
-      };
+    // Close any existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
-    connect();
+    const eventSource = new EventSource(url);
+    eventSourceRef.current = eventSource;
 
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+    eventSource.onopen = () => {
+      if (!mountedRef.current) return;
+      retryCountRef.current = 0;
+      setConnected(true);
+    };
+
+    eventSource.onmessage = (event) => {
+      if (!mountedRef.current) return;
+      try {
+        const parsed = JSON.parse(event.data) as Record<string, unknown>;
+        const type = parsed.type as SSEEvent['type'];
+        const timestamp =
+          typeof parsed.timestamp === 'string'
+            ? parsed.timestamp
+            : new Date().toISOString();
+        const nested = parsed.data;
+        let data: Record<string, unknown>;
+        if (
+          nested !== undefined &&
+          typeof nested === 'object' &&
+          nested !== null &&
+          !Array.isArray(nested)
+        ) {
+          data = { ...(nested as Record<string, unknown>) };
+        } else {
+          data = { ...parsed };
+          delete data.type;
+          delete data.timestamp;
+        }
+        setLastEvent({ type, data, timestamp });
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err);
       }
     };
-  }, [url, enabled]);
 
-  return { lastEvent, error };
+    eventSource.onerror = () => {
+      if (!mountedRef.current) return;
+      eventSource.close();
+      eventSourceRef.current = null;
+      setConnected(false);
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, then cap at 30s
+      // Unlike before: retry count NEVER stops — always reconnect
+      retryCountRef.current += 1;
+      const delay = Math.min(1000 * Math.pow(2, Math.min(retryCountRef.current - 1, 5)), 30000);
+
+      retryTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) connect();
+      }, delay);
+    };
+  }, [url, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (enabled) connect();
+
+    return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, [url, enabled, connect]);
+
+  return { lastEvent, connected };
 }

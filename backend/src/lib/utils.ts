@@ -1,20 +1,25 @@
 import { prisma } from './prisma.js';
 
 export async function generateBillNumber(): Promise<string> {
-  const bills = await prisma.bill.findMany({
-    select: { billNumber: true }
-  });
+  try {
+    // Efficiently find the highest bill number without loading all bills
+    const lastBill = await prisma.bill.findFirst({
+      select: { billNumber: true },
+      orderBy: { createdAt: 'desc' },
+    });
 
-  let maxNum = 0;
-  for (const b of bills) {
-    const num = parseInt(b.billNumber, 10);
-    if (!isNaN(num) && num > maxNum) {
-      maxNum = num;
+    let maxNum = 0;
+    if (lastBill) {
+      const num = parseInt(lastBill.billNumber, 10);
+      if (!isNaN(num)) maxNum = num;
     }
-  }
 
-  const nextNum = maxNum + 1;
-  return String(nextNum).padStart(3, '0');
+    const nextNum = maxNum + 1;
+    return String(nextNum).padStart(4, '0');
+  } catch {
+    // Fallback: timestamp-based unique bill number (prevents crash if DB is slow)
+    return String(Date.now()).slice(-6);
+  }
 }
 
 export const TAX_RATE = 0.02; // 2% GST

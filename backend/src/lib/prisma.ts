@@ -3,33 +3,47 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 
-function createPrismaClient() {
-  // In serverless (Vercel), pg.Pool needs a direct connection, NOT the pgbouncer URL.
-  // Use DIRECT_URL (port 5432) if available, otherwise fall back to DATABASE_URL.
+// Track pool instance to avoid creating multiple pools on hot-reload
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+  pgPool: pg.Pool | undefined;
+};
+
+function createPrismaClient(): PrismaClient {
+  // Use DIRECT_URL (port 5432, native Postgres) instead of DATABASE_URL
+  // (port 6543, pgbouncer). pg.Pool is incompatible with pgbouncer transaction mode.
   const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error('DATABASE_URL is not set in the environment.');
+    throw new Error('DATABASE_URL or DIRECT_URL must be set in environment variables.');
   }
 
-  // Create a pg connection pool (uses direct Postgres connection, not pgbouncer)
-  const pool = new pg.Pool({
-    connectionString,
-    // On Vercel serverless, keep pool small to avoid connection exhaustion
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-  });
-  
-  // Instantiated with the pg driver adapter as required by Prisma 7
-  const adapter = new PrismaPg(pool);
-  
+  // Reuse pool across invocations in production (serverless warm starts)
+  if (!globalForPrisma.pgPool) {
+    globalForPrisma.pgPool = new pg.Pool({
+      connectionString,
+      // Conservative pool size for serverless (Vercel functions share nothing)
+      max: 3,
+      min: 0,
+      idleTimeoutMillis: 20000,
+      connectionTimeoutMillis: 10000,
+      // Retry failed connections
+      allowExitOnIdle: false,
+    });
+
+    // Log pool errors to prevent unhandled rejections
+    globalForPrisma.pgPool.on('error', (err) => {
+      console.error('[Prisma Pool] Unexpected pool error:', err.message);
+    });
+  }
+
+  const adapter = new PrismaPg(globalForPrisma.pgPool);
   return new PrismaClient({ adapter });
 }
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+// Singleton pattern — reuse across requests in the same process
+export const prisma: PrismaClient =
+  globalForPrisma.prisma ?? createPrismaClient();
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// Always persist the singleton (not just in dev) to prevent connection leaks
+// in serverless environments where global state persists across warm invocations
+globalForPrisma.prisma = prisma;

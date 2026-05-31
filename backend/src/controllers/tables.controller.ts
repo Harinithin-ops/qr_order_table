@@ -100,9 +100,9 @@ export async function getTableQR(req: Request, res: Response) {
 
 export async function createTable(req: Request, res: Response) {
   try {
-    const { tableNumber } = req.body;
+    const tableNumber = parseInt(String(req.body.tableNumber), 10);
     
-    if (!tableNumber || typeof tableNumber !== 'number' || tableNumber <= 0) {
+    if (isNaN(tableNumber) || tableNumber <= 0) {
       return res.status(400).json({ error: 'Valid table number is required' });
     }
 
@@ -217,16 +217,21 @@ export async function assignTables(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Admins don't have waiter profiles — table assignment is for waiters only
+    if (username === 'admin') {
+      return res.status(403).json({ error: 'Table assignment is for waiter accounts only, not admin.' });
+    }
+
     // Find the waiter by username
     const waiter = await prisma.waiter.findUnique({
       where: { username }
     });
 
-    if (!waiter && username !== 'admin') {
-      return res.status(404).json({ error: 'Waiter profile not found' });
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter profile not found. Please log in as a waiter account.' });
     }
 
-    const waiterId = waiter ? waiter.id : 'admin';
+    const waiterId = waiter.id;
 
     // Verify if any table in tableIds is already assigned to a DIFFERENT waiter
     const assignedElsewhere = await prisma.table.findMany({

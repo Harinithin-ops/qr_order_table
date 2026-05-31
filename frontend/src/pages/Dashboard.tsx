@@ -15,7 +15,7 @@ export default function DashboardPage() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setOrders(data);

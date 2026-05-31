@@ -36,9 +36,11 @@ export default function WaiterCompleted() {
   const fetchCompleted = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch('/api/orders?status=completed');
+      const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
-        setOrders(await res.json());
+        const all = await res.json();
+        // Show orders that are completed (PAID, SERVED, or PENDING payment)
+        setOrders(all.filter((o: CompletedOrder) => ['PAID', 'SERVED', 'PENDING'].includes(o.status)));
       }
     } catch (e) {
       console.error('Failed to fetch completed orders:', e);

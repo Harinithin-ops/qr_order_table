@@ -159,7 +159,7 @@ export default function WaiterDashboard() {
   const fetchOrders = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setOrders(data);
@@ -195,6 +195,7 @@ export default function WaiterDashboard() {
       await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status }),
       });
     } catch (e) {

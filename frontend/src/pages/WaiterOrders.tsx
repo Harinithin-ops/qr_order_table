@@ -190,7 +190,7 @@ export default function WaiterOrders() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) setOrders(await res.json());
     } catch (e) {
       console.error('Failed to fetch orders:', e);
@@ -322,6 +322,7 @@ export default function WaiterOrders() {
       const res = await fetch('/api/tables/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ tableIds: pendingTables }),
       });
       if (res.ok) {
@@ -352,6 +353,7 @@ export default function WaiterOrders() {
       await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status }),
       });
     } catch (e) {
@@ -369,6 +371,7 @@ export default function WaiterOrders() {
       await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ status: 'SERVED' }),
       });
     } catch (e) {
