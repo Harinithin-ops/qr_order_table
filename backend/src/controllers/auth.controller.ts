@@ -93,3 +93,40 @@ export function checkAuth(req: AuthenticatedRequest, res: Response) {
   return res.json({ authenticated: true, username: req.username });
 }
 
+export async function getMe(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { username } = req;
+    if (!username) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (username === 'admin') {
+      return res.json({
+        id: 'admin',
+        username: 'admin',
+        role: 'admin',
+        email: 'admin@kavitha.com',
+        createdAt: new Date(),
+      });
+    }
+
+    const { prisma } = await import('../lib/prisma.js');
+    const waiter = await prisma.waiter.findUnique({
+      where: { username }
+    });
+
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter profile not found' });
+    }
+
+    return res.json({
+      ...waiter,
+      role: 'waiter'
+    });
+  } catch (error) {
+    console.error('Failed to fetch user profile:', error);
+    return res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+}
+
+

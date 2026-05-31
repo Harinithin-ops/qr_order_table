@@ -5,6 +5,7 @@ import WaiterLogin from './pages/WaiterLogin';
 import WaiterOrders from './pages/WaiterOrders';
 import WaiterCompleted from './pages/WaiterCompleted';
 import WaiterMenu from './pages/WaiterMenu';
+import WaiterProfile from './pages/WaiterProfile';
 import Menu from './pages/Menu';
 import Pay from './pages/Pay';
 import Bill from './pages/Bill';
@@ -125,6 +126,7 @@ export default function App() {
           <Route path="/waiter/orders" element={<WaiterOrders />} />
           <Route path="/waiter/completed" element={<WaiterCompleted />} />
           <Route path="/waiter/menu" element={<WaiterMenu />} />
+          <Route path="/waiter/profile" element={<WaiterProfile />} />
         </Route>
 
         {/* ── Admin Routes (dark AdminLayout) ─────────────────────────── */}

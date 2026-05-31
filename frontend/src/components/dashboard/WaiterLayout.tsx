@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckCircle2, Menu, X, Utensils, LogOut, BookOpen } from 'lucide-react';
+import { LayoutDashboard, CheckCircle2, Menu, X, Utensils, LogOut, BookOpen, User } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
 import { useEventSource } from '@/hooks/useEventSource';
 
 export default function WaiterLayout() {
   const [activeCount, setActiveCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [waiterUsername, setWaiterUsername] = useState<string>('Waiter');
   const { lastEvent } = useEventSource('/api/events');
   const location = useLocation();
   const navigate = useNavigate();
 
   const fetchActiveCount = async () => {
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetch('/api/orders', {
+        credentials: 'include'
+      });
       if (res.ok) {
         const data = await res.json();
         const active = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED');
@@ -24,8 +27,23 @@ export default function WaiterLayout() {
     }
   };
 
+  const fetchUserRole = async () => {
+    try {
+      const res = await fetch('/api/auth/check', {
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWaiterUsername(data.username || 'Waiter');
+      }
+    } catch (e) {
+      console.error('Failed to fetch user role:', e);
+    }
+  };
+
   useEffect(() => {
     fetchActiveCount();
+    fetchUserRole();
   }, []);
 
   useEffect(() => {
@@ -63,6 +81,12 @@ export default function WaiterLayout() {
       name: 'Manage Menu',
       path: '/waiter/menu',
       icon: BookOpen,
+      badge: null,
+    },
+    {
+      name: 'My Profile',
+      path: '/waiter/profile',
+      icon: User,
       badge: null,
     },
   ];
@@ -152,16 +176,16 @@ export default function WaiterLayout() {
           <div className="flex items-center justify-between px-3 py-3 rounded-xl bg-white/10 border border-white/10 mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-white/20 border border-white/20 flex items-center justify-center font-bold text-xs text-white uppercase">
-                WT
+                {waiterUsername.slice(0, 2)}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-white truncate">Waiter</p>
+                <p className="text-xs font-semibold text-white truncate capitalize">{waiterUsername}</p>
                 <p className="text-[10px] text-amber-200 truncate">Waiter Staff</p>
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[10px] text-amber-200">Live</span>
+            <div className="flex items-center gap-1 border border-green-400/20 bg-green-400/10 px-1.5 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-[9px] text-amber-200 font-bold uppercase tracking-wider">Live</span>
             </div>
           </div>
           <button
