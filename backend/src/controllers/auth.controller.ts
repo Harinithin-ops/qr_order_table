@@ -35,7 +35,7 @@ export async function login(req: Request, res: Response) {
     return res.json({ success: true, role: username });
   }
 
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+  if (username === ADMIN_USERNAME) {
     // Admin login triggers OTP
     try {
       // Generate a secure verification code and store it in-memory (always active as instant terminal bypass)

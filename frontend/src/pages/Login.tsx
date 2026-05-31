@@ -5,7 +5,6 @@ import { Lock, ShieldAlert } from 'lucide-react';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -26,7 +25,7 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username }),
       });
 
       if (res.ok) {
@@ -92,7 +91,7 @@ export default function LoginPage() {
         {/* Body */}
         <div className="p-8">
           {!otpRequired ? (
-            /* Phase 1: Username & Password */
+            /* Phase 1: Username Only */
             <form onSubmit={handleLogin} className="space-y-6">
               {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm text-center">
@@ -107,17 +106,7 @@ export default function LoginPage() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm transition bg-gray-50/50"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-2">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm transition bg-gray-50/50"
+                  placeholder="e.g. admin"
                   required
                 />
               </div>
@@ -127,12 +116,12 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-black transition-colors focus:outline-none disabled:opacity-70 font-semibold shadow-sm"
               >
-                {loading ? 'Authenticating...' : 'Login'}
+                {loading ? 'Sending Code...' : 'Get Login Code'}
               </button>
               
               <div className="text-xs text-gray-500 text-center mt-4 space-y-1 bg-gray-50 p-3 rounded-xl border border-gray-100">
                 <p className="font-semibold text-gray-600">Admin Authentication Note:</p>
-                <p>Logging in as <span className="font-mono bg-white px-1 border rounded text-[10px] font-bold text-gray-700">admin</span> will trigger a secure 6-digit verification code to the registered email: <span className="font-bold underline">{adminEmail || 'kavithahotel47471@gmail.com'}</span>.</p>
+                <p>Entering the admin username <span className="font-mono bg-white px-1 border rounded text-[10px] font-bold text-gray-700">admin</span> will trigger a secure 6-digit verification code to the registered email: <span className="font-bold underline">{adminEmail || 'kavithahotel47471@gmail.com'}</span>.</p>
               </div>
             </form>
           ) : (
