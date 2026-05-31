@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import { printTotpSetup } from './utils/totp.js';
 
 // Controllers
-import { login, logout, checkAuth, verifyOtp, getMe } from './controllers/auth.controller.js';
+import { login, logout, checkAuth, verifyOtp, getMe, updateMe } from './controllers/auth.controller.js';
 import { getMenu, updateMenuItem, createMenuItem, deleteMenuItem } from './controllers/menu.controller.js';
 import { getTables, callWaiter, dismissWaiter, getTableQR, createTable, deleteTable } from './controllers/tables.controller.js';
 import {
@@ -63,6 +63,7 @@ app.post('/api/auth/verify-otp', verifyOtp);
 app.post('/api/auth/logout', logout);
 app.get('/api/auth/check', authMiddleware, checkAuth);
 app.get('/api/auth/me', authMiddleware, getMe);
+app.patch('/api/auth/me', authMiddleware, updateMe);
 
 // Waiters (Admin only)
 app.get('/api/waiters', authMiddleware, adminOnly, getWaiters);

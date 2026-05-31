@@ -129,4 +129,56 @@ export async function getMe(req: AuthenticatedRequest, res: Response) {
   }
 }
 
+export async function updateMe(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { username } = req;
+    const { email } = req.body;
+
+    if (!username) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (username === 'admin') {
+      return res.status(403).json({ error: 'Admin details cannot be modified' });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    // Verify email format (rough check)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return res.status(400).json({ error: 'Invalid email address format' });
+    }
+
+    const { prisma } = await import('../lib/prisma.js');
+
+    // Assert unique email (but allow if it belongs to the current waiter)
+    const existingEmailWaiter = await prisma.waiter.findUnique({
+      where: { email: trimmedEmail }
+    });
+
+    if (existingEmailWaiter && existingEmailWaiter.username !== username) {
+      return res.status(400).json({ error: 'This email address is already registered to another staff member' });
+    }
+
+    // Update Waiter
+    const updatedWaiter = await prisma.waiter.update({
+      where: { username },
+      data: { email: trimmedEmail }
+    });
+
+    return res.json({
+      ...updatedWaiter,
+      role: 'waiter'
+    });
+  } catch (error) {
+    console.error('Failed to update user profile:', error);
+    return res.status(500).json({ error: 'Failed to update profile' });
+  }
+}
+
 

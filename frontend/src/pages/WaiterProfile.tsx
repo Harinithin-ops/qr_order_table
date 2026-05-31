@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, Mail, Calendar, Shield, Activity, BadgeAlert } from 'lucide-react';
+import { User, Mail, Calendar, Shield, Activity, BadgeAlert, CheckCircle, Save, Lock } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 
 interface UserProfile {
@@ -15,6 +15,12 @@ export default function WaiterProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Editable fields
+  const [emailInput, setEmailInput] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -24,6 +30,7 @@ export default function WaiterProfilePage() {
         if (res.ok) {
           const data = await res.json();
           setProfile(data);
+          setEmailInput(data.email || '');
         } else {
           const data = await res.json().catch(() => ({}));
           setError(data.error || 'Failed to load profile details');
@@ -38,6 +45,43 @@ export default function WaiterProfilePage() {
 
     fetchProfile();
   }, []);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    if (!emailInput.trim()) {
+      setSaveError('Email is required');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailInput.trim() }),
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setProfile(updated);
+        setEmailInput(updated.email || '');
+        setSaveSuccess('Profile updated successfully!');
+        setTimeout(() => setSaveSuccess(null), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSaveError(data.error || 'Failed to update email address. Make sure the email is unique.');
+      }
+    } catch (err) {
+      console.error(err);
+      setSaveError('An error occurred while updating profile.');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -100,35 +144,74 @@ export default function WaiterProfilePage() {
 
           <hr className="border-gray-100" />
 
-          {/* Details list */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Account Information</h3>
-            
-            <div className="grid grid-cols-1 gap-4 text-sm">
-              {/* Username row */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50/50 hover:bg-gray-50 border border-gray-100/50 rounded-xl transition">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <User size={16} />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Username</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{profile.username}</p>
+          {/* Form */}
+          <form onSubmit={handleUpdateProfile} className="space-y-5">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Account Details</h3>
+
+            {saveSuccess && (
+              <div className="p-3 bg-green-50 border border-green-150 text-green-700 font-medium text-xs rounded-xl flex items-center gap-2">
+                <CheckCircle size={16} />
+                <span>{saveSuccess}</span>
+              </div>
+            )}
+
+            {saveError && (
+              <div className="p-3 bg-red-50 border border-red-100 text-red-600 font-medium text-xs rounded-xl flex items-center gap-2">
+                <BadgeAlert size={16} className="shrink-0" />
+                <span>{saveError}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {/* Username field (Read-only) */}
+              <div>
+                <label htmlFor="profile-username" className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Username (Unmodifiable)</span>
+                  <Lock size={12} className="text-gray-400" />
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
+                    <User size={16} />
+                  </div>
+                  <input
+                    id="profile-username"
+                    type="text"
+                    readOnly
+                    disabled
+                    value={profile.username}
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-400 cursor-not-allowed select-none focus:outline-none"
+                  />
                 </div>
               </div>
 
-              {/* Email row */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50/50 hover:bg-gray-50 border border-gray-100/50 rounded-xl transition">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <Mail size={16} />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Generated Email ID</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{profile.email}</p>
+              {/* Email field (Editable) */}
+              <div>
+                <label htmlFor="profile-email" className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                  Email Address *
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-500">
+                    <Mail size={16} />
+                  </div>
+                  <input
+                    id="profile-email"
+                    type="email"
+                    required
+                    disabled={profile.role === 'admin' || updating}
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="yourname@gmail.com"
+                    className={`w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 transition ${
+                      profile.role === 'admin' 
+                        ? 'bg-gray-50 text-gray-400 cursor-not-allowed' 
+                        : 'bg-white hover:bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500'
+                    }`}
+                  />
                 </div>
               </div>
 
-              {/* Registration row */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50/50 hover:bg-gray-50 border border-gray-100/50 rounded-xl transition">
+              {/* Registered date */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50/50 border border-gray-100 rounded-xl">
                 <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
                   <Calendar size={16} />
                 </div>
@@ -140,8 +223,8 @@ export default function WaiterProfilePage() {
                 </div>
               </div>
 
-              {/* Status row */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50/50 hover:bg-gray-50 border border-gray-100/50 rounded-xl transition">
+              {/* Security Status */}
+              <div className="flex items-center gap-3 p-3 bg-gray-50/50 border border-gray-100 rounded-xl">
                 <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
                   <Shield size={16} />
                 </div>
@@ -154,7 +237,31 @@ export default function WaiterProfilePage() {
                 </div>
               </div>
             </div>
-          </div>
+
+            {profile.role !== 'admin' && (
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={updating || emailInput === profile.email}
+                  className={`w-full font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition active:scale-95 shadow-md ${
+                    updating || emailInput === profile.email
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                      : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/10'
+                  }`}
+                >
+                  {updating ? (
+                    <>
+                      <Activity className="animate-spin" size={16} /> Saving Changes…
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} /> Save Profile Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </form>
         </div>
       </div>
     </div>
