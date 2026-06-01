@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { TAX_RATE, generateBillNumber } from '../lib/utils.js';
@@ -776,10 +777,22 @@ export async function createBillWaiter(req: Request, res: Response) {
  */
 export async function getBillsWaiter(req: Request, res: Response) {
   try {
+    const authReq = req as AuthenticatedRequest;
+    const waiter = await prisma.waiter.findUnique({
+      where: { username: authReq.username }
+    });
+
+    if (!waiter) {
+      return res.json([]);
+    }
+
     const bills = await prisma.bill.findMany({
       where: {
         order: {
-          status: { notIn: ['CANCELLED'] }
+          status: { notIn: ['CANCELLED'] },
+          table: {
+            assignedWaiterId: waiter.id
+          }
         }
       },
       include: {

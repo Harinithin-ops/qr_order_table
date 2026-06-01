@@ -223,6 +223,19 @@ export async function getOrders(req: Request, res: Response) {
       };
     }
 
+    if (authReq.username !== 'admin') {
+      const waiter = await prisma.waiter.findUnique({
+        where: { username: authReq.username }
+      });
+      if (waiter) {
+        whereClause.table = {
+          assignedWaiterId: waiter.id
+        };
+      } else {
+        return res.json([]);
+      }
+    }
+
     const orders = await prisma.order.findMany({
       where: whereClause,
       include: {
