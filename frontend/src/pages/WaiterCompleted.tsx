@@ -18,6 +18,13 @@ interface CompletedOrder {
   createdAt: string;
   table: { tableNumber: number };
   items: { id: string; quantity: number; menuItem: { name: string } }[];
+  bill?: {
+    id: string;
+    billNumber: string;
+    paymentStatus: string;
+    paymentMethod: string | null;
+    paymentReference: string | null;
+  } | null;
 }
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -36,7 +43,7 @@ export default function WaiterCompleted() {
   const fetchCompleted = async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch('/api/orders', { credentials: 'include' });
+      const res = await fetch('/api/orders?status=completed', { credentials: 'include' });
       if (res.ok) {
         const all = await res.json();
         // Show orders that are completed (PAID, SERVED, or PENDING payment)
@@ -62,10 +69,12 @@ export default function WaiterCompleted() {
     }
   }, [lastEvent]);
 
+  const cleanSearch = search.startsWith('#') ? search.slice(1) : search;
   const filtered = orders.filter(o =>
-    o.table.tableNumber.toString().includes(search) ||
-    o.items.some(item => item.menuItem.name.toLowerCase().includes(search.toLowerCase())) ||
-    (o.status ? o.status.toLowerCase().includes(search.toLowerCase()) : false)
+    o.table.tableNumber.toString().includes(cleanSearch) ||
+    o.items.some(item => item.menuItem.name.toLowerCase().includes(cleanSearch.toLowerCase())) ||
+    (o.status ? o.status.toLowerCase().includes(cleanSearch.toLowerCase()) : false) ||
+    (o.bill?.billNumber ? o.bill.billNumber.toLowerCase().includes(cleanSearch.toLowerCase()) : false)
   );
 
   const todayOrders = orders.filter(
@@ -84,7 +93,7 @@ export default function WaiterCompleted() {
   }
 
   return (
-    <div className="p-4 md:p-6 animate-slide-up">
+    <div className="p-3 sm:p-4 md:p-6 animate-slide-up">
       <WaiterAlerts lastEvent={lastEvent} />
 
       {/* Header */}
@@ -205,9 +214,16 @@ export default function WaiterCompleted() {
                     <Utensils size={13} />
                     {statusInfo.label}
                   </div>
-                  <span className="text-[11px] text-gray-400 font-mono">
-                    ID: #{order.id.slice(-6).toUpperCase()}
-                  </span>
+                  <div className="text-right flex flex-col items-end">
+                    {order.bill?.billNumber && (
+                      <span className="text-[11px] font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 mb-0.5 shadow-sm">
+                        Bill No: {order.bill.billNumber}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      ID: #{order.id.slice(-6).toUpperCase()}
+                    </span>
+                  </div>
                 </div>
               </div>
             );

@@ -103,6 +103,8 @@ model Waiter {
   username     String   @unique
   email        String   @unique
   passwordHash String?
+  displayName  String?
+  isDisabled   Boolean  @default(false)
   tables       Table[]
   createdAt    DateTime @default(now())
 }

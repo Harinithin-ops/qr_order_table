@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import { 
   Activity, Plus, Trash2, User, Search, AlertCircle, CheckCircle, X, Shield,
-  Lock, Eye, EyeOff, KeyRound, RefreshCw
+  Lock, Eye, EyeOff, KeyRound, RefreshCw, Pencil, ToggleLeft, ToggleRight,
+  TableIcon
 } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
+
+interface AssignedTable {
+  id: string;
+  tableNumber: number;
+  slug: string;
+}
 
 interface Waiter {
   id: string;
   username: string;
+  displayName: string | null;
   email: string;
+  isDisabled: boolean;
   createdAt: string;
+  tables: AssignedTable[];
 }
 
 export default function AdminWaitersPage() {
@@ -33,6 +43,16 @@ export default function AdminWaitersPage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  // Rename states
+  const [renameTarget, setRenameTarget] = useState<Waiter | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameSuccess, setRenameSuccess] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+
+  // Toggle access state
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const fetchWaiters = async () => {
     try {
@@ -170,9 +190,75 @@ export default function AdminWaitersPage() {
     }
   };
 
-  const filteredWaiters = waiters.filter(waiter => 
-    waiter.username.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget) return;
+    setRenameError(null);
+    setRenameSuccess(null);
+
+    if (!renameValue.trim()) {
+      setRenameError('Display name cannot be empty');
+      return;
+    }
+
+    setRenaming(true);
+    try {
+      const res = await fetch(`/api/waiters/${renameTarget.id}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: renameValue.trim() }),
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setWaiters(prev => prev.map(w => w.id === updated.id ? updated : w));
+        setRenameSuccess(`Display name updated to "${updated.displayName}".`);
+        setTimeout(() => {
+          setRenameTarget(null);
+          setRenameSuccess(null);
+        }, 1800);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setRenameError(errData.error || 'Failed to update display name');
+      }
+    } catch (err) {
+      console.error(err);
+      setRenameError('An error occurred while updating the display name');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleToggleAccess = async (waiter: Waiter) => {
+    setTogglingId(waiter.id);
+    try {
+      const res = await fetch(`/api/waiters/${waiter.id}/access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isDisabled: !waiter.isDisabled }),
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setWaiters(prev => prev.map(w => w.id === updated.id ? updated : w));
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Failed to update access');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while updating waiter access');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const filteredWaiters = waiters.filter(waiter => {
+    const name = (waiter.displayName || waiter.username).toLowerCase();
+    return name.includes(searchTerm.toLowerCase()) || waiter.username.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   const getAvatarBgColor = (name: string) => {
     const code = name.charCodeAt(0) % 5;
@@ -200,7 +286,7 @@ export default function AdminWaitersPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 font-serif">Staff Management</h1>
           <p className="text-gray-500 mt-1">
-            Create, monitor, and delete Waiter accounts for {HOTEL_NAME}. 
+            Create, monitor, and manage Waiter accounts for {HOTEL_NAME}. 
             Each waiter logs in securely with their <strong>username + password</strong>.
           </p>
         </div>
@@ -236,7 +322,7 @@ export default function AdminWaitersPage() {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
-            placeholder="Search waiter username..."
+            placeholder="Search waiter name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 hover:bg-gray-100/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
@@ -262,6 +348,7 @@ export default function AdminWaitersPage() {
               <thead>
                 <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200 font-semibold">
                   <th className="px-6 py-4">Waiter Profile</th>
+                  <th className="px-6 py-4">Assigned Tables</th>
                   <th className="px-6 py-4">Registration Date</th>
                   <th className="px-6 py-4 text-center">Dashboard Access</th>
                   <th className="px-6 py-4 text-center">Password</th>
@@ -270,19 +357,61 @@ export default function AdminWaitersPage() {
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
                 {filteredWaiters.map(waiter => (
-                  <tr key={waiter.id} className="hover:bg-gray-50/50 transition">
+                  <tr key={waiter.id} className={`hover:bg-gray-50/50 transition ${waiter.isDisabled ? 'opacity-60' : ''}`}>
+                    {/* Profile */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase shadow-sm border border-black/5 ${getAvatarBgColor(waiter.username)}`}>
-                          {waiter.username.slice(0, 2)}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase shadow-sm border border-black/5 ${getAvatarBgColor(waiter.username)} ${waiter.isDisabled ? 'grayscale' : ''}`}>
+                          {(waiter.displayName || waiter.username).slice(0, 2)}
                         </div>
                         <div>
-                          <h4 className="font-semibold text-gray-900 leading-none">{waiter.username}</h4>
-                          <span className="text-[10px] text-gray-400 font-medium tracking-wide uppercase mt-1 block">Waiter Staff</span>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-semibold text-gray-900 leading-none">
+                              {waiter.displayName || waiter.username}
+                            </h4>
+                            <button
+                              onClick={() => {
+                                setRenameTarget(waiter);
+                                setRenameValue(waiter.displayName || waiter.username);
+                                setRenameError(null);
+                                setRenameSuccess(null);
+                              }}
+                              className="text-gray-400 hover:text-blue-600 transition p-0.5 rounded"
+                              title="Edit display name"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium tracking-wide mt-0.5 block">
+                            @{waiter.username}
+                          </span>
                         </div>
                       </div>
                     </td>
 
+                    {/* Assigned Tables */}
+                    <td className="px-6 py-4">
+                      {waiter.tables.length === 0 ? (
+                        <span className="text-xs text-gray-400 italic">No tables</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {waiter.tables
+                            .slice()
+                            .sort((a, b) => a.tableNumber - b.tableNumber)
+                            .map(t => (
+                              <span
+                                key={t.id}
+                                className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full text-xs font-bold"
+                              >
+                                <TableIcon size={10} />
+                                T{t.tableNumber}
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Registration Date */}
                     <td className="px-6 py-4 text-gray-400 text-xs font-semibold">
                       {new Intl.DateTimeFormat('en-IN', {
                         day: '2-digit',
@@ -294,13 +423,30 @@ export default function AdminWaitersPage() {
                       }).format(new Date(waiter.createdAt))}
                     </td>
 
+                    {/* Dashboard Access Toggle */}
                     <td className="px-6 py-4 text-center">
-                      <span className="bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1">
-                        <CheckCircle size={10} fill="currentColor" className="text-white" />
-                        Enabled
-                      </span>
+                      <button
+                        onClick={() => handleToggleAccess(waiter)}
+                        disabled={togglingId === waiter.id}
+                        title={waiter.isDisabled ? 'Enable Dashboard Access' : 'Disable Dashboard Access'}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition active:scale-95 ${
+                          waiter.isDisabled
+                            ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                            : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                        } ${togglingId === waiter.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        {togglingId === waiter.id ? (
+                          <Activity size={12} className="animate-spin" />
+                        ) : waiter.isDisabled ? (
+                          <ToggleLeft size={14} />
+                        ) : (
+                          <ToggleRight size={14} />
+                        )}
+                        {waiter.isDisabled ? 'Disabled' : 'Enabled'}
+                      </button>
                     </td>
 
+                    {/* Password Reset */}
                     <td className="px-6 py-4 text-center">
                       <button
                         onClick={() => {
@@ -316,9 +462,10 @@ export default function AdminWaitersPage() {
                       </button>
                     </td>
 
+                    {/* Delete */}
                     <td className="px-6 py-4 text-center">
                       <button
-                        onClick={() => handleDeleteWaiter(waiter.id, waiter.username)}
+                        onClick={() => handleDeleteWaiter(waiter.id, waiter.displayName || waiter.username)}
                         className="p-2 rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 transition active:scale-90"
                         title="Delete Waiter Profile"
                       >
@@ -367,7 +514,7 @@ export default function AdminWaitersPage() {
                   />
                 </div>
                 <p className="text-[10px] text-gray-400 mt-1.5 leading-normal">
-                  The waiter will use this to log in. Username cannot be changed later.
+                  Used to log in. You can set a display name afterwards.
                 </p>
               </div>
 
@@ -471,7 +618,7 @@ export default function AdminWaitersPage() {
                 <h3 className="font-bold text-lg text-gray-900 font-serif flex items-center gap-2">
                   <KeyRound size={18} className="text-amber-500" /> Reset Password
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">For: <strong>{resetTarget.username}</strong></p>
+                <p className="text-xs text-gray-500 mt-0.5">For: <strong>{resetTarget.displayName || resetTarget.username}</strong></p>
               </div>
               <button onClick={() => setResetTarget(null)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 transition">
                 <X size={18} />
@@ -532,6 +679,78 @@ export default function AdminWaitersPage() {
                   disabled={resetting}
                 >
                   {resetting ? <><Activity className="animate-spin" size={16} /> Saving…</> : 'Set Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rename Display Name Modal ─────────────────────────────────────── */}
+      {renameTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto pt-12 md:pt-20">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 animate-slide-up mb-10">
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-lg text-gray-900 font-serif flex items-center gap-2">
+                  <Pencil size={18} className="text-blue-500" /> Edit Display Name
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Login username: <strong>@{renameTarget.username}</strong> (unchanged)</p>
+              </div>
+              <button onClick={() => setRenameTarget(null)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 transition">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRenameSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Display Name *
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter display name"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm bg-gray-50/50"
+                    disabled={renaming}
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 leading-normal">
+                  This is the name shown in the admin dashboard. The login username stays the same.
+                </p>
+              </div>
+
+              {renameError && (
+                <p className="text-xs font-semibold text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-100 flex items-center gap-1.5">
+                  <AlertCircle size={14} className="shrink-0" /> {renameError}
+                </p>
+              )}
+              {renameSuccess && (
+                <p className="text-xs font-semibold text-green-700 bg-green-50 p-2.5 rounded-lg border border-green-200 flex items-center gap-1.5">
+                  <CheckCircle size={14} className="shrink-0" /> {renameSuccess}
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRenameTarget(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+                  disabled={renaming}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-1 shadow-sm"
+                  disabled={renaming}
+                >
+                  {renaming ? <><Activity className="animate-spin" size={16} /> Saving…</> : 'Save Name'}
                 </button>
               </div>
             </form>

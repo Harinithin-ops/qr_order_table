@@ -10,8 +10,17 @@ export async function getWaiters(req: Request, res: Response) {
       select: {
         id: true,
         username: true,
+        displayName: true,
         email: true,
+        isDisabled: true,
         createdAt: true,
+        tables: {
+          select: {
+            id: true,
+            tableNumber: true,
+            slug: true,
+          }
+        }
         // Never expose passwordHash to client
       }
     });
@@ -71,8 +80,17 @@ export async function createWaiter(req: Request, res: Response) {
       select: {
         id: true,
         username: true,
+        displayName: true,
         email: true,
+        isDisabled: true,
         createdAt: true,
+        tables: {
+          select: {
+            id: true,
+            tableNumber: true,
+            slug: true,
+          }
+        }
       }
     });
 
@@ -133,3 +151,88 @@ export async function resetWaiterPassword(req: AuthenticatedRequest, res: Respon
     return res.status(500).json({ error: 'Failed to reset password' });
   }
 }
+
+/** Admin-only: Rename a waiter's display name (not the login username) */
+export async function renameWaiter(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const { displayName } = req.body;
+
+    if (!displayName || !displayName.trim()) {
+      return res.status(400).json({ error: 'Display name is required' });
+    }
+
+    const waiter = await prisma.waiter.findUnique({ where: { id } });
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter not found' });
+    }
+
+    const updated = await prisma.waiter.update({
+      where: { id },
+      data: { displayName: displayName.trim() },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        isDisabled: true,
+        createdAt: true,
+        tables: {
+          select: {
+            id: true,
+            tableNumber: true,
+            slug: true,
+          }
+        }
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Failed to rename waiter:', error);
+    return res.status(500).json({ error: 'Failed to rename waiter' });
+  }
+}
+
+/** Admin-only: Enable or disable a waiter's dashboard access */
+export async function toggleWaiterAccess(req: AuthenticatedRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const { isDisabled } = req.body;
+
+    if (typeof isDisabled !== 'boolean') {
+      return res.status(400).json({ error: 'isDisabled must be a boolean' });
+    }
+
+    const waiter = await prisma.waiter.findUnique({ where: { id } });
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter not found' });
+    }
+
+    const updated = await prisma.waiter.update({
+      where: { id },
+      data: { isDisabled },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        isDisabled: true,
+        createdAt: true,
+        tables: {
+          select: {
+            id: true,
+            tableNumber: true,
+            slug: true,
+          }
+        }
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Failed to toggle waiter access:', error);
+    return res.status(500).json({ error: 'Failed to update waiter access' });
+  }
+}
+

@@ -19,6 +19,7 @@ import {
   HelpCircle,
   ShoppingBag,
   Loader2,
+  Clock,
 } from 'lucide-react';
 
 export default function CheckoutPage() {
@@ -34,42 +35,11 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'CASH' | null>(null);
   const [isClient, setIsClient] = useState(false);
 
+  const [tableUuid, setTableUuid] = useState<string | null>(null);
+
   const { lastEvent } = useEventSource('/api/events');
 
-  // Re-fetch the bill if it already exists
-  const refetchBill = useCallback(async (billId: string) => {
-    const res = await fetch(`/api/bills/${billId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setBill(data);
-      if (data.paymentMethod) setPaymentMethod(data.paymentMethod as any);
-    }
-  }, []);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  // On mount: restore an existing bill from sessionStorage if the user refreshed or came back
-  useEffect(() => {
-    if (!tableId) return;
-    const savedBillId = sessionStorage.getItem(`kh_checkout_bill_${tableId}`);
-    if (savedBillId) {
-      refetchBill(savedBillId);
-    }
-  }, [tableId, refetchBill]);
-
-
-  // SSE: refresh bill on updates
-  useEffect(() => {
-    if (!bill?.id) return;
-    if (lastEvent?.type !== 'ORDER_UPDATE') return;
-    const payload = lastEvent.data as { billId?: string };
-    if (payload.billId !== bill.id) return;
-    setTimeout(() => refetchBill(bill.id), 500);
-  }, [lastEvent, bill?.id, refetchBill]);
-
-  const handleCheckout = async () => {
+  const handleCheckout = useCallback(async () => {
     if (!tableId) return;
     setError('');
     setLoading(true);
@@ -81,9 +51,15 @@ export default function CheckoutPage() {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to generate unified bill.');
+        if (data.tableId) {
+          setTableUuid(data.tableId);
+        }
         return;
       }
       setBill(data);
+      if (data.order?.tableId) {
+        setTableUuid(data.order.tableId);
+      }
       // After checkout succeeds, persist the bill ID so refreshing restores the bill
       sessionStorage.setItem(`kh_checkout_bill_${tableId}`, data.id);
       // After checkout succeeds, clear all per-order session keys and store the merged bill's orderId
@@ -95,7 +71,57 @@ export default function CheckoutPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tableId]);
+
+  // Re-fetch the bill if it already exists
+  const refetchBill = useCallback(async (billId: string) => {
+    const res = await fetch(`/api/bills/${billId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setBill(data);
+      if (data.paymentMethod) setPaymentMethod(data.paymentMethod as any);
+      if (data.order?.tableId) {
+        setTableUuid(data.order.tableId);
+      }
+    } else {
+      // If fetching the specific bill ID fails (e.g. 404 due to merge/deletion),
+      // clear the invalid ID and run table checkout to recover/refresh the unified bill
+      sessionStorage.removeItem(`kh_checkout_bill_${tableId}`);
+      handleCheckout();
+    }
+  }, [tableId, handleCheckout]);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // On mount: restore an existing bill from sessionStorage or run handleCheckout to fetch/lock
+  useEffect(() => {
+    if (!tableId) return;
+    const savedBillId = sessionStorage.getItem(`kh_checkout_bill_${tableId}`);
+    if (savedBillId) {
+      refetchBill(savedBillId);
+    } else {
+      handleCheckout();
+    }
+  }, [tableId, refetchBill, handleCheckout]);
+
+  // SSE: refresh bill on updates
+  useEffect(() => {
+    if (lastEvent?.type !== 'ORDER_UPDATE') return;
+    const payload = lastEvent.data as { billId?: string; tableId?: string };
+    
+    // Check if the event matches this table (either by database UUID or by parameter slug/ID)
+    const isTargetTable = (tableUuid && payload.tableId === tableUuid) || (payload.tableId === tableId);
+
+    if (bill?.id) {
+      if (payload.billId === bill.id || isTargetTable) {
+        setTimeout(() => refetchBill(bill.id), 500);
+      }
+    } else if (isTargetTable) {
+      setTimeout(() => handleCheckout(), 500);
+    }
+  }, [lastEvent, bill?.id, tableId, tableUuid, refetchBill, handleCheckout]);
 
   const handleSubmitPayment = async (method: 'UPI' | 'CASH', ref?: string) => {
     if (!bill?.id) return;
@@ -158,40 +184,21 @@ export default function CheckoutPage() {
         {/* Step 1: Initiate Checkout */}
         {!bill && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center space-y-4 animate-slide-up">
-            <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-500">
-              <ShoppingBag size={28} />
+            <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 animate-pulse">
+              <Clock size={28} />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-gray-900">Pay for All Orders</h2>
+              <h2 className="text-base font-extrabold text-gray-900">Awaiting Waiter Billing</h2>
               <p className="text-xs text-gray-500 mt-1 px-2 leading-relaxed">
-                All your orders will be combined into a single bill. You only need to pay once.
+                Your combined bill is being processed. Once the waiter generates it, you'll be able to make the payment here.
               </p>
             </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-100 px-4 py-3 rounded-xl text-xs text-red-600 flex items-center gap-2">
-                <AlertTriangle size={14} />
-                {error}
-              </div>
-            )}
-
-            <button
-              onClick={handleCheckout}
-              disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/20 active:scale-[0.98] transition disabled:opacity-60 text-sm"
-            >
-              {loading ? (
-                <><Loader2 size={18} className="animate-spin" /> Generating Bill...</>
-              ) : (
-                <><Receipt size={18} /> Close All Orders & Generate Bill</>
-              )}
-            </button>
-
             <button
               onClick={() => navigate(-1)}
-              className="w-full bg-white border border-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs hover:bg-gray-50 transition active:scale-95"
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 rounded-xl text-sm transition active:scale-95 shadow-md shadow-amber-500/10"
             >
-              Keep Ordering
+              Back to Menu
             </button>
           </div>
         )}
@@ -205,7 +212,7 @@ export default function CheckoutPage() {
                 Combined Bill Summary
               </h3>
               <span className="ml-auto text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                #{bill.billNumber}
+                Bill No: {bill.billNumber}
               </span>
             </div>
 

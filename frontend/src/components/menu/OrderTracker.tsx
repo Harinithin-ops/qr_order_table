@@ -216,7 +216,7 @@ export function OrderTracker({ orderId, tableId, onCompleted }: Props) {
                 moment.
               </p>
               <Link
-                to={`/pay/${billId}`}
+                to={`/checkout/${tableId}`}
                 className="bg-amber-600 text-white px-6 py-3 rounded-full font-bold shadow-lg w-full flex items-center justify-center gap-2 hover:bg-amber-700 transition"
               >
                 <Smartphone size={18} /> View payment status
@@ -229,7 +229,7 @@ export function OrderTracker({ orderId, tableId, onCompleted }: Props) {
                 receipt here after payment is confirmed.
               </p>
               <Link
-                to={`/pay/${billId}`}
+                to={`/checkout/${tableId}`}
                 className="bg-red-600 text-white px-6 py-3 rounded-full font-bold shadow-lg w-full flex items-center justify-center gap-2 hover:bg-red-700 transition"
               >
                 <Smartphone size={18} /> Pay online (UPI / GPay)

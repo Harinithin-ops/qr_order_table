@@ -64,6 +64,7 @@ export interface OrderWithItems {
     };
   }[];
   bill?: BillData | null;
+  tableHasBill?: boolean;
 }
 
 export interface BillData {

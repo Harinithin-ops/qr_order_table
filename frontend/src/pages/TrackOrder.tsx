@@ -14,7 +14,8 @@ import {
   Utensils, 
   CreditCard,
   HandPlatter,
-  PartyPopper
+  PartyPopper,
+  Lock
 } from 'lucide-react';
 
 export default function TrackOrderPage() {
@@ -110,6 +111,7 @@ export default function TrackOrderPage() {
   const isServed = order.status === 'SERVED';
   const isPending = order.status === 'PENDING';
   const isPaid = order.status === 'PAID';
+  const hasBill = !!order.bill || !!order.tableHasBill;
   
   // Use bill amounts when available (more accurate); fall back to live computation
   const taxRate = 0.02; // 2% GST
@@ -268,12 +270,21 @@ export default function TrackOrderPage() {
             <p className="text-xs text-gray-500 px-2 leading-relaxed">
               Enjoy your meal! When you're ready to leave, tap the button below to close your order and pay.
             </p>
-            <Link
-              to={`/checkout/${order.tableId}`}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] text-sm mt-2"
-            >
-              <CreditCard size={16} /> Request Bill / Pay Now
-            </Link>
+            {hasBill ? (
+              <Link
+                to={`/checkout/${order.table.slug || order.tableId}`}
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition active:scale-[0.98] text-sm mt-2"
+              >
+                <CreditCard size={16} /> Request Bill / Pay Now
+              </Link>
+            ) : (
+              <button
+                disabled
+                className="w-full bg-gray-100 text-gray-400 border border-gray-200 font-bold py-3 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed text-sm mt-2"
+              >
+                <Lock size={16} /> Awaiting Waiter Billing (Locked)
+              </button>
+            )}
           </div>
         )}
 
@@ -352,13 +363,23 @@ export default function TrackOrderPage() {
 
       {/* Sticky Bottom Actions */}
       <div className="p-4 bg-white border-t border-gray-150 shadow-lg sticky bottom-0 z-10 flex flex-col gap-2">
-        <Link
-          to={`/checkout/${order.tableId}`}
-          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition cursor-pointer text-sm"
-        >
-          <CreditCard size={18} />
-          {isPaid ? 'View Bill Receipt' : isPending ? 'Go to Payment (Bill Ready)' : 'Proceed to Payment / Bill'}
-        </Link>
+        {hasBill || isPaid ? (
+          <Link
+            to={`/checkout/${order.table.slug || order.tableId}`}
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition cursor-pointer text-sm"
+          >
+            <CreditCard size={18} />
+            {isPaid ? 'View Bill Receipt' : 'Go to Payment (Bill Ready)'}
+          </Link>
+        ) : (
+          <button
+            disabled
+            className="w-full bg-gray-100 text-gray-400 border border-gray-200 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed text-sm"
+          >
+            <Lock size={18} />
+            Awaiting Waiter Billing (Locked)
+          </button>
+        )}
         <button
           onClick={() => navigate(`/menu/${order.table.slug || order.tableId}`)}
           className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-bold py-2.5 rounded-xl text-xs transition active:scale-95"

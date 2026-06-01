@@ -1,44 +1,48 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckCircle2, Menu, X, Utensils, LogOut, BookOpen, User, ClipboardList } from 'lucide-react';
+import {
+  LayoutDashboard, CheckCircle2, Utensils, LogOut,
+  BookOpen, User, ClipboardList, X, Menu,
+} from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
 import { useEventSource } from '@/hooks/useEventSource';
 
+const NAV_ITEMS = [
+  { name: 'Orders',  path: '/waiter/orders',    icon: LayoutDashboard, mobileLabel: 'Orders'  },
+  { name: 'Queue',   path: '/waiter/queue',      icon: ClipboardList,   mobileLabel: 'Queue'   },
+  { name: 'Done',    path: '/waiter/completed',  icon: CheckCircle2,    mobileLabel: 'Done'    },
+  { name: 'Menu',    path: '/waiter/menu',       icon: BookOpen,        mobileLabel: 'Menu'    },
+  { name: 'Profile', path: '/waiter/profile',    icon: User,            mobileLabel: 'Profile' },
+];
+
 export default function WaiterLayout() {
-  const [activeCount, setActiveCount] = useState<number>(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-  const [waiterUsername, setWaiterUsername] = useState<string>('Waiter');
+  const [activeCount, setActiveCount] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [waiterUsername, setWaiterUsername] = useState('Waiter');
   const { lastEvent } = useEventSource('/api/events');
   const location = useLocation();
   const navigate = useNavigate();
 
   const fetchActiveCount = async () => {
     try {
-      const res = await fetch('/api/orders', {
-        credentials: 'include'
-      });
+      const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        const active = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED');
-        setActiveCount(active.length);
+        setActiveCount(
+          data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED').length,
+        );
       }
-    } catch (e) {
-      console.error('Failed to fetch active count:', e);
-    }
+    } catch {}
   };
 
   const fetchUserRole = async () => {
     try {
-      const res = await fetch('/api/auth/check', {
-        credentials: 'include'
-      });
+      const res = await fetch('/api/auth/check', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setWaiterUsername(data.username || 'Waiter');
       }
-    } catch (e) {
-      console.error('Failed to fetch user role:', e);
-    }
+    } catch {}
   };
 
   useEffect(() => {
@@ -48,128 +52,73 @@ export default function WaiterLayout() {
 
   useEffect(() => {
     if (!lastEvent) return;
-    if (['NEW_ORDER', 'ORDER_UPDATE'].includes(lastEvent.type)) {
-      void fetchActiveCount();
-    }
+    if (['NEW_ORDER', 'ORDER_UPDATE'].includes(lastEvent.type)) void fetchActiveCount();
   }, [lastEvent]);
 
+  // Close drawer on route change
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
   const handleLogout = async () => {
-    try {
-      const res = await fetch('/api/auth/logout', { method: 'POST' });
-      if (res.ok) navigate('/');
-    } catch {
-      navigate('/');
-    }
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    navigate('/');
   };
 
-  const navItems = [
-    {
-      name: 'Live Orders',
-      path: '/waiter/orders',
-      icon: LayoutDashboard,
-      badge: activeCount > 0 ? activeCount : null,
-      badgeColor: 'bg-amber-500 text-white',
-      badgeTitle: 'Active orders',
-    },
-    {
-      name: 'Order Queue',
-      path: '/waiter/queue',
-      icon: ClipboardList,
-      badge: null,
-    },
-    {
-      name: 'Completed Orders',
-      path: '/waiter/completed',
-      icon: CheckCircle2,
-      badge: null,
-    },
-    {
-      name: 'Manage Menu',
-      path: '/waiter/menu',
-      icon: BookOpen,
-      badge: null,
-    },
-    {
-      name: 'My Profile',
-      path: '/waiter/profile',
-      icon: User,
-      badge: null,
-    },
-  ];
-
-  const closeMobileMenu = () => setMobileMenuOpen(false);
+  const isActive = (path: string) => location.pathname === path;
 
   return (
-    <div className="min-h-screen bg-amber-50 flex flex-col md:flex-row">
-      {/* Mobile Top Navbar */}
-      <header className="md:hidden bg-amber-500 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+    /**
+     * Root wrapper:
+     *   Desktop (md+): flex-row — sidebar (fixed w-64) + scrollable content column
+     *   Mobile (<md):  flex-col — sticky top bar + scrollable content + fixed bottom tabs
+     *
+     * IMPORTANT: We use a SINGLE <Outlet /> so React Router always renders the
+     * matched route. We position it with padding/margin to avoid overlap with bars.
+     */
+    <div className="min-h-screen bg-gray-50">
+
+      {/* ═══════════════════════════════════════════════════════════
+          DESKTOP SIDEBAR  (visible only on md+, fixed on the left)
+      ════════════════════════════════════════════════════════════ */}
+      <aside className="
+        hidden md:flex flex-col
+        fixed left-0 top-0 bottom-0 w-64
+        bg-amber-600 z-30 shadow-xl
+      ">
+        {/* Brand */}
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-amber-700">
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shadow-inner">
             <Utensils size={18} className="text-white" />
           </div>
           <div>
-            <span className="font-bold text-sm tracking-wide block">{HOTEL_NAME}</span>
-            <span className="text-[10px] text-amber-100 block -mt-0.5">Waiter Dashboard</span>
-          </div>
-        </div>
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
-          aria-label="Toggle menu"
-        >
-          {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </header>
-
-      {/* Mobile overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-          onClick={closeMobileMenu}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed md:sticky top-0 bottom-0 left-0 w-64 md:w-72 bg-amber-600 text-amber-100 border-r border-amber-700 flex flex-col z-50 transition-transform duration-300 ease-in-out md:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        } ${mobileMenuOpen ? 'h-screen' : 'h-auto md:h-screen'}`}
-      >
-        {/* Brand Header */}
-        <div className="hidden md:flex items-center gap-3 px-6 py-6 border-b border-amber-700">
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-lg">
-            <Utensils size={20} className="text-white" />
-          </div>
-          <div>
-            <h2 className="font-bold text-white text-base tracking-wide leading-tight">{HOTEL_NAME}</h2>
-            <p className="text-[11px] text-amber-200 font-medium">Waiter Panel</p>
+            <h2 className="font-bold text-white text-sm leading-tight">{HOTEL_NAME}</h2>
+            <p className="text-[10px] text-amber-200 font-medium">Waiter Panel</p>
           </div>
         </div>
 
-
-        {/* Nav Links */}
-        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
-          {navItems.map((item) => {
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {NAV_ITEMS.map(item => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const active = isActive(item.path);
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                onClick={closeMobileMenu}
-                className={`flex items-center justify-between px-4 py-3 rounded-xl font-medium text-sm transition-all duration-150 ${
-                  isActive
-                    ? 'bg-white/20 border border-white/30 text-white shadow-sm'
-                    : 'hover:bg-white/10 hover:text-white border border-transparent text-amber-100'
+                className={`flex items-center justify-between px-3.5 py-3 rounded-xl font-medium text-sm transition-all ${
+                  active
+                    ? 'bg-white/20 border border-white/25 text-white shadow-sm'
+                    : 'hover:bg-white/10 text-amber-100 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon size={18} className={isActive ? 'text-white' : 'text-amber-200'} />
+                  <Icon size={17} className={active ? 'text-white' : 'text-amber-200'} />
                   <span>{item.name}</span>
                 </div>
-                {item.badge != null && (
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${item.badgeColor}`}>
-                    {item.badge}
+                {item.path === '/waiter/orders' && activeCount > 0 && (
+                  <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
+                    {activeCount}
                   </span>
                 )}
               </Link>
@@ -177,37 +126,194 @@ export default function WaiterLayout() {
           })}
         </nav>
 
-        {/* Footer / Logout */}
-        <div className="p-4 border-t border-amber-700 bg-amber-700/30">
-          <div className="flex items-center justify-between px-3 py-3 rounded-xl bg-white/10 border border-white/10 mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-white/20 border border-white/20 flex items-center justify-center font-bold text-xs text-white uppercase">
-                {waiterUsername.slice(0, 2)}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-white truncate capitalize">{waiterUsername}</p>
-                <p className="text-[10px] text-amber-200 truncate">Waiter Staff</p>
-              </div>
+        {/* User + Logout */}
+        <div className="p-3 border-t border-amber-700 space-y-2">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/10 border border-white/10">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs text-white uppercase shrink-0">
+              {waiterUsername.slice(0, 2)}
             </div>
-            <div className="flex items-center gap-1 border border-green-400/20 bg-green-400/10 px-1.5 py-0.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[9px] text-amber-200 font-bold uppercase tracking-wider">Live</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-white truncate capitalize">{waiterUsername}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-[10px] text-amber-200">Live</span>
+              </div>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/10 hover:bg-red-600/40 hover:text-white border border-white/10 hover:border-red-400/30 font-medium text-sm transition-all duration-150 text-amber-100"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-red-500/30 border border-white/10 hover:border-red-400/30 text-amber-100 hover:text-white text-sm font-medium transition"
           >
-            <LogOut size={16} />
-            <span>Sign Out</span>
+            <LogOut size={15} />
+            Sign Out
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-x-hidden">
+      {/* ═══════════════════════════════════════════════════════════
+          MOBILE TOP BAR  (visible only below md, fixed at top)
+      ════════════════════════════════════════════════════════════ */}
+      <header className="
+        md:hidden
+        fixed top-0 left-0 right-0 z-40
+        bg-amber-500 text-white
+        flex items-center justify-between px-4 py-3
+        shadow-md
+      ">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
+            <Utensils size={15} className="text-white" />
+          </div>
+          <div>
+            <p className="font-bold text-sm leading-tight">{HOTEL_NAME}</p>
+            <p className="text-[10px] text-amber-100">Waiter Dashboard</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeCount > 0 && (
+            <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
+              {activeCount} active
+            </span>
+          )}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
+      </header>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MOBILE DRAWER OVERLAY + PANEL
+      ════════════════════════════════════════════════════════════ */}
+      {drawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+      <div className={`
+        md:hidden fixed top-0 right-0 bottom-0 w-72
+        bg-amber-600 z-50 flex flex-col shadow-2xl
+        transition-transform duration-300
+        ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}
+      `}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-amber-700">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+              <Utensils size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-white text-sm">{HOTEL_NAME}</p>
+              <p className="text-[10px] text-amber-200">@{waiterUsername}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setDrawerOpen(false)}
+            className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 transition"
+          >
+            <X size={18} className="text-white" />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {NAV_ITEMS.map(item => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center justify-between px-4 py-3.5 rounded-xl font-medium text-sm transition-all ${
+                  active
+                    ? 'bg-white/20 border border-white/25 text-white shadow-sm'
+                    : 'hover:bg-white/10 text-amber-100 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon size={18} className={active ? 'text-white' : 'text-amber-200'} />
+                  <span>{item.name}</span>
+                </div>
+                {item.path === '/waiter/orders' && activeCount > 0 && (
+                  <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
+                    {activeCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-3 border-t border-amber-700">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white/10 hover:bg-red-500/30 border border-white/10 text-amber-100 hover:text-white text-sm font-semibold transition"
+          >
+            <LogOut size={16} />
+            Sign Out
+          </button>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MAIN CONTENT  ←  SINGLE <Outlet /> for all screen sizes
+          • Desktop: offset left by sidebar width (ml-64)
+          • Mobile:  padded top (top bar) + padded bottom (tab bar)
+      ════════════════════════════════════════════════════════════ */}
+      <main className="
+        md:ml-64
+        pt-[56px] md:pt-0
+        pb-[64px] md:pb-0
+        min-h-screen
+        overflow-x-hidden
+      ">
         <Outlet />
       </main>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MOBILE BOTTOM TAB BAR  (visible only below md)
+      ════════════════════════════════════════════════════════════ */}
+      <nav className="
+        md:hidden
+        fixed bottom-0 left-0 right-0 z-40
+        bg-white border-t border-gray-200
+        shadow-[0_-2px_12px_rgba(0,0,0,0.08)]
+      ">
+        <div className="grid grid-cols-5 h-16">
+          {NAV_ITEMS.map(item => {
+            const Icon = item.icon;
+            const active = isActive(item.path);
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+                  active ? 'text-amber-600' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {/* Active top accent bar */}
+                {active && (
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-amber-500 rounded-b-full" />
+                )}
+                <div className={`relative p-1.5 rounded-xl transition-all ${active ? 'bg-amber-50' : ''}`}>
+                  <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+                  {/* Order badge */}
+                  {item.path === '/waiter/orders' && activeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                      {activeCount > 9 ? '9+' : activeCount}
+                    </span>
+                  )}
+                </div>
+                <span className={`text-[10px] font-semibold leading-none ${active ? 'text-amber-600' : 'text-gray-400'}`}>
+                  {item.mobileLabel}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

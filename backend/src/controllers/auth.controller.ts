@@ -40,6 +40,11 @@ export async function login(req: Request, res: Response) {
       return res.status(401).json({ error: 'Invalid waiter username. Please check your username and try again.' });
     }
 
+    // Block disabled waiter accounts
+    if (waiter.isDisabled) {
+      return res.status(403).json({ error: 'Your account has been temporarily disabled. Please contact the admin.' });
+    }
+
     const token = generateToken(waiter.username);
     
     res.cookie(AUTH_COOKIE_NAME, token, {

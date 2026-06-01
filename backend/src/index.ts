@@ -17,7 +17,9 @@ import {
   updateOrderStatus,
   markReceived,
   generateBillForOrder,
-  cancelOrder
+  cancelOrder,
+  addCustomItemToOrder,
+  deleteOrderItem
 } from './controllers/orders.controller.js';
 import {
   createBill,
@@ -36,7 +38,7 @@ import {
   markBillPaid
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
-import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword } from './controllers/waiters.controller.js';
+import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess } from './controllers/waiters.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -74,6 +76,8 @@ app.get('/api/waiters', authMiddleware, adminOnly, getWaiters);
 app.post('/api/waiters', authMiddleware, adminOnly, createWaiter);
 app.delete('/api/waiters/:id', authMiddleware, adminOnly, deleteWaiter);
 app.patch('/api/waiters/:id/password', authMiddleware, adminOnly, resetWaiterPassword);
+app.patch('/api/waiters/:id/name', authMiddleware, adminOnly, renameWaiter);
+app.patch('/api/waiters/:id/access', authMiddleware, adminOnly, toggleWaiterAccess);
 
 // Menu
 app.get('/api/menu', getMenu);
@@ -118,6 +122,8 @@ app.get('/api/waiter/bills', authMiddleware, getBillsWaiter);
 app.post('/api/waiter/bills', authMiddleware, createBillWaiter);
 app.post('/api/waiter/bills/:id/custom-item', authMiddleware, addCustomItemToBill);
 app.patch('/api/waiter/bills/:id/pay', authMiddleware, markBillPaid);
+app.post('/api/waiter/orders/:orderId/custom-item', authMiddleware, addCustomItemToOrder);
+app.delete('/api/waiter/order-items/:itemId', authMiddleware, deleteOrderItem);
 
 // Customer-facing unified checkout (merges all orders for a table into 1 bill)
 app.post('/api/tables/:tableId/checkout', tableCheckout);
@@ -233,3 +239,5 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+

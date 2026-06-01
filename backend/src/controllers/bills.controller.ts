@@ -543,6 +543,15 @@ export async function tableCheckout(req: Request, res: Response) {
       return res.status(404).json({ error: 'No active orders found for this table' });
     }
 
+    const hasAnyBill = orders.some(o => o.bill !== null);
+    if (!hasAnyBill) {
+      return res.status(403).json({ 
+        error: 'BILL_NOT_GENERATED', 
+        message: 'Billing is locked. Awaiting waiter billing.',
+        tableId: table.id
+      });
+    }
+
     // Step 1: Generate bills for any orders that don't have one yet
     for (const order of orders) {
       if (!order.bill) {

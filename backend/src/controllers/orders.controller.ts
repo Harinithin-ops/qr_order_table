@@ -243,7 +243,13 @@ export async function getOrders(req: Request, res: Response) {
       const sanitizedOrders = orders.map(order => ({
         ...order,
         total: 0,
-        bill: null,
+        bill: order.bill ? {
+          id: order.bill.id,
+          billNumber: order.bill.billNumber,
+          paymentStatus: order.bill.paymentStatus,
+          paymentMethod: order.bill.paymentMethod,
+          paymentReference: order.bill.paymentReference,
+        } : null,
         items: order.items.map(item => ({
           ...item,
           price: 0,
@@ -285,7 +291,28 @@ export async function getOrderById(req: Request, res: Response) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    return res.json(order);
+    const tableBill = await prisma.bill.findFirst({
+      where: {
+        order: {
+          tableId: order.tableId,
+          status: { notIn: ['PAID', 'CANCELLED'] }
+        }
+      }
+    });
+
+    const responsePayload = {
+      ...order,
+      tableHasBill: !!tableBill
+    };
+
+    if (authReq.username !== 'admin') {
+      // Return order with prices zeroed out if not admin/waiter
+      // Wait, is there a price zeroing check in getOrderById?
+      // Let's verify if there is any price zeroing. No, getOrderById originally returned the raw order:
+      // return res.json(order);
+    }
+
+    return res.json(responsePayload);
   } catch (error) {
     console.error('Failed to fetch order:', error);
     return res.status(500).json({ error: 'Failed to fetch order' });
@@ -485,5 +512,144 @@ export async function cancelOrder(req: Request, res: Response) {
   } catch (error) {
     console.error('Failed to cancel order:', error);
     return res.status(500).json({ error: 'Failed to cancel order' });
+  }
+}
+
+export async function addCustomItemToOrder(req: Request, res: Response) {
+  try {
+    const { orderId } = req.params;
+    const { name, price, quantity = 1 } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Item name is required' });
+    }
+    const parsedPrice = Number(price);
+    const parsedQty = Math.max(1, Number(quantity));
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ error: 'Valid price is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { bill: true }
+    });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    if (order.bill) {
+      return res.status(400).json({ error: 'Bill already generated for this order.' });
+    }
+
+    // Find the first category in MenuCategory
+    const firstCategory = await prisma.menuCategory.findFirst();
+    if (!firstCategory) {
+      return res.status(500).json({ error: 'No menu categories found' });
+    }
+
+    // Create a MenuItem on the fly (available: false)
+    const customItem = await prisma.menuItem.create({
+      data: {
+        name: name.trim(),
+        description: 'Extra item added by waiter',
+        price: parsedPrice,
+        categoryId: firstCategory.id,
+        available: false,
+      }
+    });
+
+    // Create OrderItem
+    await prisma.orderItem.create({
+      data: {
+        orderId,
+        menuItemId: customItem.id,
+        quantity: parsedQty,
+        price: parsedPrice,
+      }
+    });
+
+    // Recalculate total for the order
+    const allItems = await prisma.orderItem.findMany({ where: { orderId } });
+    const newTotal = allItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: { total: newTotal },
+      include: {
+        table: true,
+        items: { include: { menuItem: true } }
+      }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId,
+      tableId: order.tableId,
+    });
+
+    return res.json(updatedOrder);
+  } catch (error) {
+    console.error('Failed to add custom item to order:', error);
+    return res.status(500).json({ error: 'Failed to add item to order' });
+  }
+}
+
+export async function deleteOrderItem(req: Request, res: Response) {
+  try {
+    const { itemId } = req.params;
+
+    const orderItem = await prisma.orderItem.findUnique({
+      where: { id: itemId },
+      include: { order: true }
+    });
+
+    if (!orderItem) {
+      return res.status(404).json({ error: 'Order item not found' });
+    }
+
+    if (orderItem.order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    // Check if order has a bill
+    const orderWithBill = await prisma.order.findUnique({
+      where: { id: orderItem.orderId },
+      include: { bill: true }
+    });
+    if (orderWithBill?.bill) {
+      return res.status(400).json({ error: 'Bill already generated.' });
+    }
+
+    // Delete the OrderItem
+    await prisma.orderItem.delete({
+      where: { id: itemId }
+    });
+
+    // Find remaining items
+    const remainingItems = await prisma.orderItem.findMany({
+      where: { orderId: orderItem.orderId }
+    });
+
+    if (remainingItems.length === 0) {
+      // If no items left, cancel the order
+      await prisma.order.update({
+        where: { id: orderItem.orderId },
+        data: { status: 'CANCELLED', total: 0 }
+      });
+    } else {
+      // Recalculate totals
+      const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      await prisma.order.update({
+        where: { id: orderItem.orderId },
+        data: { total: newTotal }
+      });
+    }
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: orderItem.orderId,
+      tableId: orderItem.order.tableId,
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to delete order item:', error);
+    return res.status(500).json({ error: 'Failed to delete order item' });
   }
 }

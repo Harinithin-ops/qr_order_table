@@ -150,7 +150,7 @@ export default function BillPage() {
       {/* Bill Preview / Actions */}
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden self-center md:self-start animate-slide-up">
         <div className="bg-gray-900 p-6 flex items-center justify-between">
-          <h1 className="text-white font-serif font-bold text-xl">Invoice #{bill.billNumber}</h1>
+          <h1 className="text-white font-serif font-bold text-xl">Bill No: {bill.billNumber}</h1>
           {isPaid && <span className="bg-green-500 text-white px-3 py-1 rounded text-sm font-bold flex items-center gap-1"><CheckCircle2 size={16}/> PAID</span>}
         </div>
 

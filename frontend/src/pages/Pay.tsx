@@ -68,11 +68,8 @@ export default function CustomerPayPage() {
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Activity className="animate-spin text-green-600" size={40} /></div>;
-  if (!bill) return <div className="text-center p-10 font-bold text-xl min-h-screen bg-gray-50">Bill not found</div>;
-
-  const isPaid = bill.paymentStatus === 'PAID';
-  const isAwaiting = bill.paymentStatus === 'AWAITING_CONFIRMATION';
+  const isPaid = bill?.paymentStatus === 'PAID';
+  const isAwaiting = bill?.paymentStatus === 'AWAITING_CONFIRMATION';
 
   // Automatically trigger PDF receipt download on customer phone when payment succeeds
   useEffect(() => {
@@ -96,6 +93,9 @@ export default function CustomerPayPage() {
       return () => clearTimeout(t);
     }
   }, [isPaid, bill?.id]);
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Activity className="animate-spin text-green-600" size={40} /></div>;
+  if (!bill) return <div className="text-center p-10 font-bold text-xl min-h-screen bg-gray-50">Bill not found</div>;
   
   // UPI Deep link standard format
   const upiLink = `upi://pay?pa=${HOTEL_UPI_ID}&pn=${encodeURIComponent(HOTEL_NAME)}&aid=uGICAgKCs-PbMfg&am=${bill.total}&cu=INR&tn=Bill%20${bill.billNumber}`;
@@ -104,7 +104,7 @@ export default function CustomerPayPage() {
     <div className="min-h-screen bg-gray-50 pb-20 max-w-md mx-auto shadow-xl">
       <div className="bg-gray-900 text-white p-6 rounded-b-3xl shadow-md text-center">
         <h1 className="text-2xl font-serif font-bold mb-1">{HOTEL_NAME}</h1>
-        <p className="text-gray-400 text-sm">Invoice #{bill.billNumber}</p>
+        <p className="text-gray-400 text-sm">Bill No: {bill.billNumber}</p>
       </div>
 
       <div className="p-4 space-y-6">

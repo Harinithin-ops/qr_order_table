@@ -16,7 +16,8 @@ import {
   FileDown, 
   Activity, 
   AlertTriangle,
-  HelpCircle
+  HelpCircle,
+  Clock
 } from 'lucide-react';
 
 export default function CustomerPaymentPage() {
@@ -223,29 +224,21 @@ export default function CustomerPaymentPage() {
         {/* WORKFLOW PHASE 1: Open / Close Order Screen */}
         {!hasBill && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4 animate-slide-up text-center">
-            <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500">
-              <AlertTriangle size={24} />
+            <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 animate-pulse">
+              <Clock size={24} />
             </div>
             <div className="space-y-1">
-              <h4 className="font-extrabold text-gray-900 text-base">Ready to Pay?</h4>
+              <h4 className="font-extrabold text-gray-900 text-base">Awaiting Waiter Billing</h4>
               <p className="text-xs text-gray-500 px-2 leading-relaxed">
-                Closing the order locks your current table items and creates your final invoice. You won't be able to add more dishes to this order.
+                Your order is currently being processed. Once the waiter generates your bill, payment options will appear here automatically.
               </p>
             </div>
 
             <button
-              onClick={handleCloseOrder}
-              disabled={closing}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/10 active:scale-95 transition-transform cursor-pointer text-sm"
-            >
-              {closing ? 'Generating Bill...' : 'Close Order & Proceed to Bill'}
-            </button>
-            
-            <button
               onClick={() => navigate(`/menu/${order.table.slug || order.tableId}`)}
-              className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 py-2.5 rounded-xl text-xs font-bold transition active:scale-95"
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-xl text-sm font-semibold transition active:scale-95 shadow-sm shadow-amber-500/10"
             >
-              Keep Ordering
+              Back to Menu
             </button>
           </div>
         )}

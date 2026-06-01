@@ -246,7 +246,7 @@ export default function WaiterDashboard() {
     activeOrders;
 
   return (
-    <div className="p-4 md:p-6 animate-slide-up">
+    <div className="p-3 sm:p-4 md:p-6 animate-slide-up">
       {/* Waiter Alerts (bell calls) */}
       <WaiterAlerts lastEvent={lastEvent} />
 
@@ -324,7 +324,7 @@ export default function WaiterDashboard() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {displayed.map(order => (
             <WaiterOrderCard
               key={order.id}
@@ -343,7 +343,7 @@ export default function WaiterDashboard() {
             <LayoutGrid size={15} className="text-amber-500" />
             Table Overview
           </h2>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
             {activeOrders.map(order => {
               const meta = STATUS_META[order.status];
               return (

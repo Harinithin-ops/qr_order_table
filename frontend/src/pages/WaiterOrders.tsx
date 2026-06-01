@@ -398,7 +398,7 @@ export default function WaiterOrders() {
   const readyCount = activeOrders.filter(o => o.status === 'READY').length;
 
   return (
-    <div className="p-6 md:p-8 animate-slide-up">
+    <div className="p-3 sm:p-4 md:p-6 animate-slide-up">
       <WaiterAlerts lastEvent={lastEvent} />
 
       {/* Payment Notice Banner */}
@@ -434,8 +434,8 @@ export default function WaiterOrders() {
       )}
 
       {/* Beautiful Table Selection Grid */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-8 animate-slide-up">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-5 animate-slide-up">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
               <Utensils size={18} className="text-amber-500" />
@@ -469,7 +469,7 @@ export default function WaiterOrders() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3">
           {tables.map(table => {
             const isPending = pendingTables.includes(table.id);
             const isSaved = savedTables.includes(table.id);
@@ -485,7 +485,7 @@ export default function WaiterOrders() {
                 type="button"
                 disabled={isAssignedToOther || submittingAssignment}
                 onClick={() => handleToggleTable(table.id)}
-                className={`p-3.5 rounded-xl font-bold text-center border transition-all duration-250 active:scale-95 flex flex-col items-center justify-center gap-1.5 shadow-sm relative overflow-hidden ${
+                className={`p-2.5 sm:p-3.5 rounded-xl font-bold text-center border transition-all duration-250 active:scale-95 flex flex-col items-center justify-center gap-1 sm:gap-1.5 shadow-sm relative overflow-hidden ${
                   isPending
                     ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/20 font-black'
                     : isAssignedToOther
@@ -493,8 +493,8 @@ export default function WaiterOrders() {
                       : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300'
                 } ${isToggled ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
               >
-                <span className="text-[10px] uppercase tracking-wider opacity-85">Table</span>
-                <span className="text-lg font-black leading-none">{table.tableNumber}</span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-wider opacity-85">T</span>
+                <span className="text-base sm:text-lg font-black leading-none">{table.tableNumber}</span>
                 {isPending && (
                   <span className="absolute top-1.5 right-1.5 text-white bg-white/20 p-0.5 rounded-full">
                     <Check size={10} strokeWidth={3} />
@@ -549,7 +549,7 @@ export default function WaiterOrders() {
 
       {/* Table Selection Guide Banner if invalid count */}
       {savedTables.length < 2 && (
-        <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-pulse">
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col items-start gap-3 shadow-sm animate-pulse">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600">
               <Activity size={24} className="animate-spin" />
@@ -578,9 +578,9 @@ export default function WaiterOrders() {
 
       {/* Page Header */}
       {savedTables.length >= 2 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Live Orders</h1>
+            <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-0.5">Live Orders</h1>
             <p className="text-sm text-gray-500">Tap <strong>Mark as Served</strong> once food is delivered to the table</p>
           </div>
           <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1 self-start sm:self-auto overflow-hidden">
@@ -619,7 +619,7 @@ export default function WaiterOrders() {
           <p className="text-gray-500">New orders from your selected tables will appear here instantly.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {activeOrders.map(order => (
             <WaiterOrderCard
               key={order.id}
