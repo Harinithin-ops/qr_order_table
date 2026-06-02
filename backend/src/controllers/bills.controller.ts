@@ -4,58 +4,171 @@ import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { TAX_RATE, generateBillNumber } from '../lib/utils.js';
 
+export async function mergeAndGetTableBill(tableId: string) {
+  // Fetch all active orders for this table
+  const orders = await prisma.order.findMany({
+    where: {
+      tableId,
+      status: { notIn: ['PAID', 'CANCELLED'] }
+    },
+    include: { bill: true, items: true }
+  });
+
+  if (orders.length === 0) {
+    throw new Error('No active orders found for this table');
+  }
+
+  // Step 1: Generate bills for any orders that don't have one yet
+  for (const order of orders) {
+    if (!order.bill) {
+      const subtotal = order.total;
+      const taxAmount = subtotal * TAX_RATE;
+      const total = subtotal + taxAmount;
+
+      const bill = await prisma.bill.create({
+        data: {
+          orderId: order.id,
+          subtotal,
+          taxAmount,
+          total,
+          billNumber: await generateBillNumber(),
+        }
+      });
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'PENDING' }
+      });
+
+      eventEmitter.emit('ORDER_UPDATE', {
+        orderId: order.id,
+        status: 'PENDING',
+        tableId,
+        billId: bill.id,
+      });
+    } else {
+      if (order.status !== 'PENDING') {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: 'PENDING' }
+        });
+      }
+    }
+  }
+
+  // Re-fetch orders with bills
+  const updatedOrders = await prisma.order.findMany({
+    where: {
+      tableId,
+      status: { notIn: ['PAID', 'CANCELLED'] }
+    },
+    include: {
+      bill: true,
+      items: { include: { menuItem: true } }
+    }
+  });
+
+  const bills = updatedOrders.map(o => o.bill).filter(Boolean) as any[];
+
+  if (bills.length === 0) {
+    throw new Error('Failed to generate bills');
+  }
+
+  // Step 2: If only one bill, return it
+  if (bills.length === 1) {
+    const singleBill = await prisma.bill.findUnique({
+      where: { id: bills[0].id },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+    return singleBill;
+  }
+
+  // Step 3: Merge all bills into the first one
+  const [primaryBill, ...otherBills] = bills;
+
+  const mergedBill = await prisma.$transaction(async (tx) => {
+    for (const sourceBill of otherBills) {
+      // Move all items from source order to primary order
+      await tx.orderItem.updateMany({
+        where: { orderId: sourceBill.orderId },
+        data: { orderId: primaryBill.orderId }
+      });
+
+      // Delete source bill and order
+      await tx.bill.delete({ where: { id: sourceBill.id } });
+      await tx.order.delete({ where: { id: sourceBill.orderId } });
+    }
+
+    // Recalculate totals for primary order
+    const allItems = await tx.orderItem.findMany({
+      where: { orderId: primaryBill.orderId }
+    });
+
+    const newSubtotal = allItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const newTaxAmount = newSubtotal * TAX_RATE;
+    const newTotal = newSubtotal + newTaxAmount;
+
+    // Update primary order total
+    await tx.order.update({
+      where: { id: primaryBill.orderId },
+      data: { total: newSubtotal }
+    });
+
+    // Update primary bill totals
+    const updated = await tx.bill.update({
+      where: { id: primaryBill.id },
+      data: {
+        subtotal: newSubtotal,
+        taxAmount: newTaxAmount,
+        total: newTotal
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: primaryBill.orderId,
+      status: 'PENDING',
+      tableId,
+      billId: primaryBill.id,
+    });
+
+    return updated;
+  });
+
+  return mergedBill;
+}
+
 export async function createBill(req: Request, res: Response) {
   try {
     const { orderId } = req.body;
 
     const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true },
+      where: { id: orderId }
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
-    // Check if bill already exists
-    const existingBill = await prisma.bill.findUnique({ where: { orderId } });
-    if (existingBill) {
-      return res.json(existingBill);
-    }
 
-    const subtotal = order.total;
-    const taxAmount = subtotal * TAX_RATE;
-    const total = subtotal + taxAmount;
-
-    const bill = await prisma.bill.create({
-      data: {
-        orderId,
-        subtotal,
-        taxAmount,
-        total,
-        billNumber: await generateBillNumber(),
-      },
-    });
-    
-    // Update order status if not paid
-    if (order.status !== 'PAID') {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: 'PENDING' } // Pending payment
-      });
-      // Notify customer their bill is ready
-      eventEmitter.emit('ORDER_UPDATE', {
-        orderId,
-        status: 'PENDING',
-        tableId: order.tableId,
-        billId: bill.id,
-      });
-    }
-
+    const bill = await mergeAndGetTableBill(order.tableId);
     return res.json(bill);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to generate bill:', error);
-    return res.status(500).json({ error: 'Failed to generate bill' });
+    return res.status(500).json({ error: error.message || 'Failed to generate bill' });
   }
 }
 
@@ -709,65 +822,16 @@ export async function createBillWaiter(req: Request, res: Response) {
     }
 
     const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true },
+      where: { id: orderId }
     });
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Return existing bill if already created
-    const existingBill = await prisma.bill.findUnique({
-      where: { orderId },
-      include: {
-        order: {
-          include: {
-            table: true,
-            items: { include: { menuItem: true } }
-          }
-        }
-      }
-    });
-    if (existingBill) return res.json(existingBill);
-
-    const subtotal = order.total;
-    const taxAmount = subtotal * TAX_RATE;
-    const total = subtotal + taxAmount;
-
-    const bill = await prisma.bill.create({
-      data: {
-        orderId,
-        subtotal,
-        taxAmount,
-        total,
-        billNumber: await generateBillNumber(),
-      },
-      include: {
-        order: {
-          include: {
-            table: true,
-            items: { include: { menuItem: true } }
-          }
-        }
-      }
-    });
-
-    // Mark order as PENDING (awaiting payment)
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: 'PENDING' }
-    });
-
-    eventEmitter.emit('ORDER_UPDATE', {
-      orderId,
-      status: 'PENDING',
-      tableId: order.tableId,
-      billId: bill.id,
-    });
-
+    const bill = await mergeAndGetTableBill(order.tableId);
     return res.json(bill);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create waiter bill:', error);
-    return res.status(500).json({ error: 'Failed to create bill' });
+    return res.status(500).json({ error: error.message || 'Failed to create bill' });
   }
 }
 

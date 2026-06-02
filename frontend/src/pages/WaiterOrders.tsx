@@ -558,12 +558,14 @@ export default function WaiterOrders() {
     );
   }
 
-  // Filter active live orders by SAVED (committed) tables
+  // Filter active live orders by SAVED (committed) tables (Only PLACED orders)
   const activeOrders = orders.filter(
-    o => !['SERVED', 'PENDING', 'PAID', 'CANCELLED'].includes(o.status) &&
+    o => o.status === 'PLACED' &&
          savedTables.includes(o.tableId)
   );
-  const readyCount = activeOrders.filter(o => o.status === 'READY').length;
+  const readyCount = orders.filter(
+    o => o.status === 'READY' && savedTables.includes(o.tableId)
+  ).length;
 
   return (
     <div className="p-3 sm:p-4 md:p-6 animate-slide-up">

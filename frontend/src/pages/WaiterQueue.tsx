@@ -601,24 +601,40 @@ function TableGroup({
                   Total: <span className="font-bold text-gray-800">{fmt(order.total)}</span>
                 </span>
                 
-                {order.status !== 'SERVED' && order.status !== 'PAID' ? (
-                  <button
-                    onClick={() => onUpdateOrderStatus(order.id, 'SERVED')}
-                    disabled={updatingStatusOrderId === order.id}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-[11px] rounded-lg transition active:scale-95 shadow-sm shadow-emerald-500/10"
-                  >
-                    {updatingStatusOrderId === order.id ? (
-                      <Activity size={12} className="animate-spin" />
-                    ) : (
-                      <CheckCircle2 size={12} />
-                    )}
-                    Confirm Served
-                  </button>
-                ) : (
-                  <span className="text-emerald-600 font-bold text-[11px] flex items-center gap-1">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Served
-                  </span>
-                )}
+                <div className="flex gap-2 items-center">
+                  {/* Status advance button inside the queue */}
+                  {['ACCEPTED', 'PREPARING'].includes(order.status) && (
+                    <button
+                      onClick={() => {
+                        const next = order.status === 'ACCEPTED' ? 'PREPARING' : 'READY';
+                        onUpdateOrderStatus(order.id, next).catch(e => console.error(e));
+                      }}
+                      disabled={updatingStatusOrderId === order.id}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-700 font-semibold text-[11px] rounded-lg transition active:scale-95 disabled:opacity-60"
+                    >
+                      {order.status === 'ACCEPTED' ? 'Mark Preparing' : 'Mark Ready'}
+                    </button>
+                  )}
+
+                  {order.status !== 'SERVED' && order.status !== 'PAID' ? (
+                    <button
+                      onClick={() => onUpdateOrderStatus(order.id, 'SERVED').catch(e => console.error(e))}
+                      disabled={updatingStatusOrderId === order.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-[11px] rounded-lg transition active:scale-95 shadow-sm shadow-emerald-500/10"
+                    >
+                      {updatingStatusOrderId === order.id ? (
+                        <Activity size={12} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={12} />
+                      )}
+                      Confirm Served
+                    </button>
+                  ) : (
+                    <span className="text-emerald-600 font-bold text-[11px] flex items-center gap-1">
+                      <CheckCircle2 size={12} className="text-emerald-500" /> Served
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -724,8 +740,8 @@ export default function WaiterQueue() {
     }
   };
 
-  // Group active (non-PAID, non-CANCELLED) orders by table
-  const activeOrders = orders.filter(o => !['PAID', 'CANCELLED'].includes(o.status));
+  // Group active (non-PLACED, non-PAID, non-CANCELLED) orders by table
+  const activeOrders = orders.filter(o => !['PLACED', 'PAID', 'CANCELLED'].includes(o.status));
   const tableGroups = activeOrders.reduce<Record<number, Order[]>>((acc, order) => {
     const tn = order.table.tableNumber;
     if (!acc[tn]) acc[tn] = [];

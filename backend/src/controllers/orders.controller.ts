@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { generateBillNumber, TAX_RATE, getCategoryTimingStatus } from '../lib/utils.js';
 import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { mergeAndGetTableBill } from './bills.controller.js';
 
 async function syncOrderAndBillTotals(orderId: string, tx?: any) {
   const db = tx || prisma;
@@ -95,9 +96,7 @@ export async function createOrder(req: Request, res: Response) {
         where: {
           tableId: table.id,
           customerId,
-          status: {
-            notIn: ['PAID', 'CANCELLED']
-          }
+          status: 'PLACED'
         },
         include: {
           items: true
@@ -112,9 +111,7 @@ export async function createOrder(req: Request, res: Response) {
         const activeOrders = await prisma.order.findMany({
           where: {
             tableId: table.id,
-            status: {
-              notIn: ['PAID', 'CANCELLED']
-            }
+            status: 'PLACED'
           },
           include: {
             items: true
@@ -482,53 +479,18 @@ export async function generateBillForOrder(req: Request, res: Response) {
     const { id: orderId } = req.params;
 
     const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true },
+      where: { id: orderId }
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
-    // Check if bill already exists
-    const existingBill = await prisma.bill.findUnique({ where: { orderId } });
-    if (existingBill) {
-      return res.json(existingBill);
-    }
 
-    const subtotal = order.total;
-    const taxAmount = subtotal * TAX_RATE;
-    const total = subtotal + taxAmount;
-
-    const bill = await prisma.bill.create({
-      data: {
-        orderId,
-        subtotal,
-        taxAmount,
-        total,
-        billNumber: await generateBillNumber(),
-      },
-    });
-    
-    // Update order status if not paid
-    if (order.status !== 'PAID') {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: 'PENDING' } // Pending payment
-      });
-      // Notify dashboard and others that bill is ready
-      eventEmitter.emit('ORDER_UPDATE', {
-        orderId,
-        status: 'PENDING',
-        tableId: order.tableId,
-        billId: bill.id,
-      });
-    }
-
+    const bill = await mergeAndGetTableBill(order.tableId);
     return res.json(bill);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to generate customer bill:', error);
-    return res.status(500).json({ error: 'Failed to generate bill' });
+    return res.status(500).json({ error: error.message || 'Failed to generate bill' });
   }
 }
 

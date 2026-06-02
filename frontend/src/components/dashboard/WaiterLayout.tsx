@@ -30,10 +30,10 @@ export default function WaiterLayout() {
         const data = await res.json();
         const activeOrders = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED');
         setOrdersCount(
-          activeOrders.filter((o: any) => ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status)).length
+          activeOrders.filter((o: any) => o.status === 'PLACED').length
         );
         setQueueCount(
-          activeOrders.filter((o: any) => ['SERVED', 'PENDING'].includes(o.status)).length
+          activeOrders.filter((o: any) => ['ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'PENDING'].includes(o.status)).length
         );
       }
     } catch (err) {
