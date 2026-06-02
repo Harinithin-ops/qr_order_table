@@ -312,4 +312,7 @@ if (!process.env.VERCEL) {
 
 export default app;
 
+// Trigger nodemon reload for database schema changes
+
+
 
