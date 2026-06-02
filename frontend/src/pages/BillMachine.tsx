@@ -20,6 +20,12 @@ import { QRCodeSVG } from 'qrcode.react';
 class EscPosBuilder {
   private buffer: number[] = [];
 
+  initialize() {
+    // ESC @ - Initialize printer (clears buffers and resets settings)
+    this.buffer.push(0x1B, 0x40);
+    return this;
+  }
+
   write(text: string) {
     const encoder = new TextEncoder();
     const bytes = encoder.encode(text);
@@ -86,6 +92,9 @@ const writeDataInChunks = async (characteristic: any, data: Uint8Array) => {
 // Compiles ESC/POS commands into a single buffer
 const compileReceipt = (bill: any, showGST: boolean): Uint8Array => {
   const escpos = new EscPosBuilder();
+  
+  // Always initialize thermal printer first
+  escpos.initialize();
   
   escpos.alignCenter();
   escpos.bold(true);
@@ -650,13 +659,30 @@ export default function BillMachinePage() {
                    <Printer size={18} /> Print Receipt (TVS)
                  </button>
 
-                <button
+                 <button
                   onClick={() => copyPayLink(selectedBill.id)}
-                  className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition active:scale-95"
+                  className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition active:scale-95 mb-4"
                 >
                   {copiedLink ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
                   {copiedLink ? 'Pay URL Copied!' : 'Copy Customer Pay Link'}
                 </button>
+
+                {/* USB Printer Connection Guide */}
+                <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 mt-4 space-y-2">
+                  <h4 className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                    <AlertCircle size={14} className="text-amber-700" /> TVS Printer Setup Guide
+                  </h4>
+                  <ul className="text-[10px] text-amber-900 space-y-1.5 list-disc pl-3.5 leading-relaxed">
+                    <li>
+                      <strong className="text-amber-950">Option A: Spooler Mode (Plug & Play)</strong>: Simply click <strong className="text-amber-950">"Print Receipt (TVS)"</strong>. It will open the system print prompt where you can select your TVS printer and print instantly.
+                    </li>
+                    <li>
+                      <strong className="text-amber-950">Option B: WebUSB Mode (Direct USB)</strong>: Click <strong className="text-amber-950">"Connect USB"</strong> to connect directly from Chrome. 
+                      <br />
+                      <em className="text-amber-800">Note: On Windows, you must use <strong>Zadig</strong> to change the TVS driver to generic <strong>WinUSB</strong>, or Chrome will block the connection.</em>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
 
