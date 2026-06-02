@@ -113,7 +113,7 @@ model Waiter {
 
 model CustomerSession {
   id        String   @id @default(uuid())
-  name      String
+  phone     String
   tableId   String
   createdAt DateTime @default(now())
   expiresAt DateTime

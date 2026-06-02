@@ -11,7 +11,7 @@ import { CartProvider } from '@/hooks/useCart';
 import { useEventSource } from '@/hooks/useEventSource';
 import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
 import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
-import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
+import { UtensilsCrossed, Search, X, Smartphone, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -25,8 +25,8 @@ export default function MenuPage() {
   // Track MULTIPLE concurrent orders (e.g. first round + second round)
   const [orderIds, setOrderIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [customerName, setCustomerName] = useState<string | null>(null);
-  const [inputName, setInputName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
+  const [inputPhone, setInputPhone] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
 
   const [activeOrders, setActiveOrders] = useState<OrderWithItems[]>([]);
@@ -43,8 +43,8 @@ export default function MenuPage() {
       if (rawSession) {
         try {
           const parsed = JSON.parse(rawSession);
-          if (parsed && parsed.customerId && parsed.name) {
-            // Verify session on the backend (extends session by 2 hours if valid)
+          if (parsed && parsed.customerId && parsed.phone) {
+            // Verify session on the backend (extends session by 24 hours if valid)
             const res = await fetch('/api/sessions/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -54,7 +54,7 @@ export default function MenuPage() {
               const data = await res.json();
               if (data.valid && data.session) {
                 setCustomerId(data.session.customerId);
-                setCustomerName(data.session.name);
+                setCustomerPhone(data.session.phone);
 
                 // Fetch active orders for this customer to restore tracking on tab reopen/refresh
                 const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.session.customerId}`);
@@ -91,7 +91,7 @@ export default function MenuPage() {
       // If session is missing, expired, or invalid, reset
       localStorage.removeItem(`kh_customer_session_${tableId}`);
       setCustomerId(null);
-      setCustomerName(null);
+      setCustomerPhone(null);
       setOrderIds([]);
       sessionStorage.removeItem(`kh_orders_${tableId}`);
       setInitializingSession(false);
@@ -202,7 +202,7 @@ export default function MenuPage() {
     );
   }
 
-  if (!customerName) {
+  if (!customerPhone) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4 max-w-md mx-auto shadow-2xl relative overflow-hidden">
         {/* Decorative background blur blobs */}
@@ -217,25 +217,27 @@ export default function MenuPage() {
 
           <form onSubmit={async (e) => {
             e.preventDefault();
-            if (inputName.trim()) {
+            const trimmed = inputPhone.trim();
+            if (trimmed) {
               try {
                 const res = await fetch('/api/sessions', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: inputName.trim(), tableId })
+                  body: JSON.stringify({ phone: trimmed, tableId })
                 });
                 if (res.ok) {
                   const data = await res.json();
                   localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify({
                     customerId: data.customerId,
-                    name: data.name
+                    phone: data.phone
                   }));
-                  setCustomerName(data.name);
+                  setCustomerPhone(data.phone);
                   setCustomerId(data.customerId);
                   setOrderIds([]);
                   sessionStorage.removeItem(`kh_orders_${tableId}`);
                 } else {
-                  alert('Failed to establish session. Please try again.');
+                  const errData = await res.json().catch(() => ({}));
+                  alert(errData.error || 'Failed to establish session. Please try again.');
                 }
               } catch (err) {
                 alert('Network error. Please try again.');
@@ -243,18 +245,20 @@ export default function MenuPage() {
             }
           }} className="space-y-4 text-left">
             <div>
-              <label htmlFor="customer-name" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                Enter your name
+              <label htmlFor="customer-phone" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                Enter your mobile number
               </label>
               <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
-                  id="customer-name"
-                  type="text"
-                  placeholder="e.g. John Doe"
+                  id="customer-phone"
+                  type="tel"
+                  placeholder="e.g. 9876543210"
                   required
-                  value={inputName}
-                  onChange={(e) => setInputName(e.target.value)}
+                  pattern="[0-9]{7,15}"
+                  title="Please enter a valid mobile number (digits only)"
+                  value={inputPhone}
+                  onChange={(e) => setInputPhone(e.target.value.replace(/[^0-9]/g, ''))}
                   className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
                   autoFocus
                 />
@@ -283,29 +287,32 @@ export default function MenuPage() {
             <p className="inline-flex items-center gap-1.5 text-gray-500 text-sm font-semibold bg-gray-50 px-3 py-1 rounded-full border border-gray-100">
               Table <span className="text-green-600 font-bold">{tableId.replace('table-', '')}</span>
             </p>
-            {customerName && (
-              <div className="flex items-center justify-center gap-1 text-[11px] text-gray-500 mt-1.5">
-                <span>Welcome, </span>
-                <span className="font-bold text-gray-800">{customerName}</span>
+            {customerPhone && (
+              <div className="flex items-center justify-center gap-1 text-[11px] text-gray-500 mt-1.5 bg-gray-50 border border-gray-150 px-2.5 py-1.5 rounded-xl">
+                <Smartphone size={10} className="text-gray-400 shrink-0" />
+                <span className="font-extrabold text-gray-800 tracking-wide">{customerPhone}</span>
                 <button
                   onClick={() => {
-                    const newName = prompt('Update your name:', customerName);
-                    if (newName && newName.trim()) {
-                      const trimmed = newName.trim();
+                    const newPhone = prompt('Update your mobile number:', customerPhone);
+                    if (newPhone && newPhone.trim()) {
+                      const trimmed = newPhone.trim().replace(/[^0-9]/g, '');
+                      if (!/^[0-9]{7,15}$/.test(trimmed)) {
+                        alert('Please enter a valid mobile number (digits only)');
+                        return;
+                      }
                       const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
                       if (rawSession) {
                         try {
                           const parsed = JSON.parse(rawSession);
-                          parsed.name = trimmed;
+                          parsed.phone = trimmed;
                           localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify(parsed));
                         } catch {}
                       }
-                      localStorage.setItem('kh_customer_name', trimmed);
-                      setCustomerName(trimmed);
+                      setCustomerPhone(trimmed);
                     }
                   }}
-                  className="p-0.5 rounded text-gray-400 hover:text-red-500 transition"
-                  title="Edit Name"
+                  className="p-0.5 rounded text-gray-400 hover:text-red-500 transition ml-1"
+                  title="Edit Mobile Number"
                 >
                   <Edit2 size={10} />
                 </button>

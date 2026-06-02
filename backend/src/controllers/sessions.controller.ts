@@ -21,20 +21,53 @@ async function cleanupExpiredSessions() {
 
 export async function createSession(req: Request, res: Response) {
   try {
-    const { name, tableId } = req.body;
+    const { phone, tableId } = req.body;
 
-    if (!name || !name.trim() || !tableId) {
-      return res.status(400).json({ error: 'Name and tableId are required' });
+    if (!phone || !phone.trim() || !tableId) {
+      return res.status(400).json({ error: 'Mobile number and tableId are required' });
+    }
+
+    const trimmedPhone = phone.trim();
+    // Validate phone: numeric digits only, between 7 and 15 digits
+    const phoneRegex = /^[0-9]{7,15}$/;
+    if (!phoneRegex.test(trimmedPhone)) {
+      return res.status(400).json({ error: 'Please enter a valid mobile number (digits only)' });
     }
 
     // Trigger cleanup asynchronously
     void cleanupExpiredSessions();
 
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
+    // Check if an active (non-expired) session already exists for this phone and table
+    const existing = await prisma.customerSession.findFirst({
+      where: {
+        phone: trimmedPhone,
+        tableId,
+        expiresAt: {
+          gt: new Date()
+        }
+      }
+    });
+
+    if (existing) {
+      // Extend the existing session's lifespan by another 24 hours and return it (session recovery!)
+      const updated = await prisma.customerSession.update({
+        where: { id: existing.id },
+        data: { expiresAt }
+      });
+      return res.status(200).json({
+        customerId: updated.id,
+        phone: updated.phone,
+        tableId: updated.tableId,
+        expiresAt: updated.expiresAt,
+      });
+    }
+
+    // Create a new session
     const session = await prisma.customerSession.create({
       data: {
-        name: name.trim(),
+        phone: trimmedPhone,
         tableId,
         expiresAt,
       },
@@ -42,7 +75,7 @@ export async function createSession(req: Request, res: Response) {
 
     return res.status(201).json({
       customerId: session.id,
-      name: session.name,
+      phone: session.phone,
       tableId: session.tableId,
       expiresAt: session.expiresAt,
     });
@@ -77,8 +110,8 @@ export async function verifySession(req: Request, res: Response) {
       return res.json({ valid: false });
     }
 
-    // Extend session by another 2 hours
-    const extendedExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    // Extend session by another 24 hours
+    const extendedExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const updated = await prisma.customerSession.update({
       where: { id: customerId },
       data: { expiresAt: extendedExpiresAt },
@@ -88,7 +121,7 @@ export async function verifySession(req: Request, res: Response) {
       valid: true,
       session: {
         customerId: updated.id,
-        name: updated.name,
+        phone: updated.phone,
         tableId: updated.tableId,
       },
     });

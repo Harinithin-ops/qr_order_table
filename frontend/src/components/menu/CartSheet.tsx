@@ -50,17 +50,14 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems, 
           customerId: customerId || undefined,
           notes: (() => {
             const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
-            let customerName = null;
+            let customerPhone = null;
             if (rawSession) {
               try {
-                customerName = JSON.parse(rawSession).name;
+                customerPhone = JSON.parse(rawSession).phone;
               } catch {}
             }
-            if (!customerName) {
-              customerName = localStorage.getItem('kh_customer_name');
-            }
-            if (customerName) {
-              return `Name: ${customerName}${notes ? ` | Notes: ${notes}` : ''}`;
+            if (customerPhone) {
+              return `Phone: ${customerPhone}${notes ? ` | Notes: ${notes}` : ''}`;
             }
             return notes || undefined;
           })(),

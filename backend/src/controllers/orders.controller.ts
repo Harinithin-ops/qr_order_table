@@ -103,11 +103,11 @@ export async function createOrder(req: Request, res: Response) {
         }
       });
     } else {
-      // Fallback same-name matching (case-insensitive) for waiters or legacy endpoints
-      const match = notes ? notes.match(/^Name:\s*([^|]+)/) : null;
-      const customerName = match ? match[1].trim() : null;
+      // Fallback same-name or same-phone matching (case-insensitive) for waiters or legacy endpoints
+      const match = notes ? notes.match(/^(?:Name|Phone):\s*([^|]+)/i) : null;
+      const customerIdentifier = match ? match[1].trim() : null;
 
-      if (customerName) {
+      if (customerIdentifier) {
         const activeOrders = await prisma.order.findMany({
           where: {
             tableId: table.id,
@@ -120,9 +120,9 @@ export async function createOrder(req: Request, res: Response) {
 
         existingOrder = activeOrders.find(o => {
           const existingNotes = o.notes || '';
-          const m = existingNotes.match(/^Name:\s*([^|]+)/);
+          const m = existingNotes.match(/^(?:Name|Phone):\s*([^|]+)/i);
           if (m) {
-            return m[1].trim().toLowerCase() === customerName.toLowerCase();
+            return m[1].trim().toLowerCase() === customerIdentifier.toLowerCase();
           }
           return false;
         });
@@ -173,15 +173,17 @@ export async function createOrder(req: Request, res: Response) {
 
           if (existingNotesContent) {
             if (!existingNotesContent.toLowerCase().includes(newNotesContent.toLowerCase())) {
-              // Extract name prefix
-              const nameMatch = existingOrder.notes?.match(/^Name:\s*([^|]+)/);
-              const nameValue = nameMatch ? nameMatch[1].trim() : 'Guest';
-              mergedNotes = `Name: ${nameValue} | Notes: ${existingNotesContent}; ${newNotesContent}`;
+              // Extract name or phone prefix
+              const idMatch = existingOrder.notes?.match(/^(?:Name|Phone):\s*([^|]+)/i);
+              const prefixType = idMatch && existingOrder.notes?.startsWith('Phone') ? 'Phone' : 'Name';
+              const idValue = idMatch ? idMatch[1].trim() : 'Guest';
+              mergedNotes = `${prefixType}: ${idValue} | Notes: ${existingNotesContent}; ${newNotesContent}`;
             }
           } else {
-            const nameMatch = existingOrder.notes?.match(/^Name:\s*([^|]+)/);
-            const nameValue = nameMatch ? nameMatch[1].trim() : 'Guest';
-            mergedNotes = `Name: ${nameValue} | Notes: ${newNotesContent}`;
+            const idMatch = existingOrder.notes?.match(/^(?:Name|Phone):\s*([^|]+)/i);
+            const prefixType = idMatch && existingOrder.notes?.startsWith('Phone') ? 'Phone' : 'Name';
+            const idValue = idMatch ? idMatch[1].trim() : 'Guest';
+            mergedNotes = `${prefixType}: ${idValue} | Notes: ${newNotesContent}`;
           }
         }
 
