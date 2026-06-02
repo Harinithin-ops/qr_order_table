@@ -777,8 +777,8 @@ export default function AdminWaitersPage() {
 
       {/* ── Waiter Profile Details Modal ─────────────────────────────────────────── */}
       {detailTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto pt-12 md:pt-20">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl border border-gray-100 animate-slide-up mb-10 relative overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden">
             
             {/* Banner top styling accent */}
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
@@ -895,107 +895,6 @@ export default function AdminWaitersPage() {
                 </div>
               </div>
 
-              {/* Password Panel (With Direct Reset) */}
-              <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 font-sans">
-                    <Lock size={14} className="text-amber-500" /> Password Management
-                  </h4>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase bg-gray-200/60 px-2 py-0.5 rounded-md font-sans">
-                    Secure (Encrypted)
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 mb-4 bg-white px-3 py-2 rounded-xl border border-gray-200">
-                  <Shield size={16} className="text-gray-400" />
-                  <span className="text-sm tracking-widest font-mono font-bold text-gray-400 select-none">
-                    ••••••••••••
-                  </span>
-                </div>
-
-                {/* Inline Password Reset Form */}
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!resetPassword || resetPassword.length < 6) {
-                      setResetError('Password must be at least 6 characters');
-                      return;
-                    }
-                    setResetting(true);
-                    setResetError(null);
-                    setResetSuccess(null);
-                    try {
-                      const res = await fetch(`/api/waiters/${detailTarget.id}/password`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ newPassword: resetPassword }),
-                        credentials: 'include'
-                      });
-                      if (res.ok) {
-                        setResetSuccess('✓ Password successfully updated!');
-                        setResetPassword('');
-                        
-                        // Dynamically update this waiter inside our state lists
-                        setWaiters(prev => prev.map(w => w.id === detailTarget.id ? { ...w, password: resetPassword } : w));
-                      } else {
-                        const errData = await res.json().catch(() => ({}));
-                        setResetError(errData.error || 'Failed to reset password');
-                      }
-                    } catch (err) {
-                      console.error(err);
-                      setResetError('An error occurred while resetting the password');
-                    } finally {
-                      setResetting(false);
-                    }
-                  }}
-                  className="space-y-3 pt-2 border-t border-gray-200/50"
-                >
-                  <label htmlFor="modal-reset-password" className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-sans">
-                    Change Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                    <input
-                      id="modal-reset-password"
-                      type={showResetPassword ? 'text' : 'password'}
-                      placeholder="Enter a new password (min. 6 chars)"
-                      value={resetPassword}
-                      onChange={(e) => setResetPassword(e.target.value)}
-                      className="w-full pl-9 pr-10 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-xs bg-white font-sans"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowResetPassword(!showResetPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-                      tabIndex={-1}
-                    >
-                      {showResetPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-
-                  {resetError && (
-                    <p className="text-[11px] font-semibold text-red-600 bg-red-50 p-2 rounded-lg border border-red-100 flex items-center gap-1.5 font-sans">
-                      <AlertCircle size={12} className="shrink-0" /> {resetError}
-                    </p>
-                  )}
-                  {resetSuccess && (
-                    <p className="text-[11px] font-semibold text-green-700 bg-green-50 p-2 rounded-lg border border-green-200 flex items-center gap-1.5 font-sans">
-                      <CheckCircle size={12} className="shrink-0" /> {resetSuccess}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={resetting || !resetPassword}
-                    className={`w-full py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] font-sans ${
-                      !resetPassword ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {resetting ? <Activity className="animate-spin" size={12} /> : <RefreshCw size={12} />}
-                    Save New Password
-                  </button>
-                </form>
-              </div>
             </div>
             
             <div className="mt-8 pt-4 border-t border-gray-100 flex justify-end">
