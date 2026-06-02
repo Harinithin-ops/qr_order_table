@@ -19,6 +19,11 @@ import {
   Utensils,
   Check,
   Lock,
+  Trash2,
+  Plus,
+  Minus,
+  Search,
+  AlertTriangle,
 } from 'lucide-react';
 import { formatDate, getStatusColor } from '@/lib/utils';
 
@@ -41,11 +46,13 @@ function WaiterOrderCard({
   order,
   onMarkComplete,
   onUpdateStatus,
+  onEditOrder,
   completing,
 }: {
   order: OrderWithItems;
   onMarkComplete: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
+  onEditOrder: (order: OrderWithItems) => void;
   completing: boolean;
 }) {
   const meta = STATUS_META[order.status] || STATUS_META['PLACED'];
@@ -85,10 +92,15 @@ function WaiterOrderCard({
       <div className="p-4 flex-1">
         <ul className="space-y-2.5">
           {order.items.map(item => (
-            <li key={item.id} className="flex justify-between items-start text-sm">
+            <li key={item.id} className={`flex justify-between items-start text-sm p-1 rounded-lg ${item.isUnavailable ? 'bg-red-50 border border-red-250 px-2 py-1.5' : ''}`}>
               <div>
                 <span className="font-semibold text-gray-900">{item.quantity}×</span>{' '}
-                <span className="text-gray-800">{item.menuItem?.name || 'Unknown Item'}</span>
+                <span className={`text-gray-800 ${item.isUnavailable ? 'text-red-700 font-bold' : ''}`}>{item.menuItem?.name || 'Unknown Item'}</span>
+                {item.isUnavailable && (
+                  <span className="ml-2 inline-flex items-center gap-0.5 bg-red-100 text-red-800 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
+                    Unavailable
+                  </span>
+                )}
                 {item.specialInstructions && (
                   <p className="text-xs text-amber-700 mt-0.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block">
                     {item.specialInstructions}
@@ -135,6 +147,15 @@ function WaiterOrderCard({
         </span>
 
         <div className="flex gap-1.5 items-center overflow-x-auto">
+          {order.status !== 'PAID' && order.status !== 'CANCELLED' && (
+            <button
+              onClick={() => onEditOrder(order)}
+              className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-lg transition shrink-0 flex items-center gap-1 border border-amber-200"
+            >
+              Edit Items
+            </button>
+          )}
+
           {/* Advance status for non-READY orders (smaller secondary button) */}
           {!canMarkComplete && nextStatus && order.status !== 'PAID' && (
             <button
@@ -185,6 +206,15 @@ export default function WaiterOrders() {
   const [selectionError, setSelectionError] = useState('');
   const [submittingAssignment, setSubmittingAssignment] = useState(false);
 
+  // States for Edit Order Modal
+  const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<OrderWithItems | null>(null);
+  const [editItems, setEditItems] = useState<any[]>([]);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [replaceSearchQuery, setReplaceSearchQuery] = useState('');
+  const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   // Derived: did local selection differ from saved?
   const hasUnsavedChanges = JSON.stringify([...pendingTables].sort()) !== JSON.stringify([...savedTables].sort());
 
@@ -220,11 +250,149 @@ export default function WaiterOrders() {
     }
   };
 
+  const fetchMenu = async () => {
+    try {
+      const res = await fetch('/api/menu');
+      if (res.ok) setMenuItems(await res.json());
+    } catch (e) {
+      console.error('Failed to fetch menu:', e);
+    }
+  };
+
   useEffect(() => {
     void fetchOrders();
     void fetchTables();
     void fetchUserRole();
+    void fetchMenu();
   }, []);
+
+  useEffect(() => {
+    if (selectedOrderForEdit) {
+      setEditItems(selectedOrderForEdit.items.map(item => ({
+        id: item.id,
+        menuItemId: item.menuItem.id,
+        name: item.menuItem.name,
+        price: item.price,
+        quantity: item.quantity,
+        isUnavailable: !!item.isUnavailable,
+        specialInstructions: item.specialInstructions || ''
+      })));
+      setSearchQuery('');
+      setReplaceSearchQuery('');
+      setReplacingIndex(null);
+      void fetchMenu();
+    }
+  }, [selectedOrderForEdit]);
+
+  const handleUpdateLocalQty = (index: number, offset: number) => {
+    setEditItems(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        return { ...item, quantity: Math.max(1, item.quantity + offset) };
+      }
+      return item;
+    }));
+  };
+
+  const handleToggleLocalUnavailable = (index: number) => {
+    setEditItems(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        return { ...item, isUnavailable: !item.isUnavailable };
+      }
+      return item;
+    }));
+  };
+
+  const handleRemoveLocalItem = (index: number) => {
+    setEditItems(prev => prev.filter((_, idx) => idx !== index));
+    if (replacingIndex === index) {
+      setReplacingIndex(null);
+    } else if (replacingIndex !== null && replacingIndex > index) {
+      setReplacingIndex(replacingIndex - 1);
+    }
+  };
+
+  const handleAddLocalItem = (menuItem: any) => {
+    setEditItems(prev => {
+      const existingIdx = prev.findIndex(item => item.menuItemId === menuItem.id);
+      if (existingIdx >= 0) {
+        return prev.map((item, idx) => {
+          if (idx === existingIdx) {
+            return { ...item, quantity: item.quantity + 1 };
+          }
+          return item;
+        });
+      } else {
+        return [
+          ...prev,
+          {
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            price: menuItem.price,
+            quantity: 1,
+            isUnavailable: false,
+            specialInstructions: ''
+          }
+        ];
+      }
+    });
+    setSearchQuery('');
+  };
+
+  const handleReplaceLocalItem = (index: number, replacementItem: any) => {
+    setEditItems(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        return {
+          ...item,
+          menuItemId: replacementItem.id,
+          name: replacementItem.name,
+          price: replacementItem.price,
+          isUnavailable: false
+        };
+      }
+      return item;
+    }));
+    setReplacingIndex(null);
+    setReplaceSearchQuery('');
+  };
+
+  const handleSaveChanges = async () => {
+    if (!selectedOrderForEdit) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/waiter/orders/${selectedOrderForEdit.id}/items`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: editItems }),
+      });
+      if (res.ok) {
+        setSelectedOrderForEdit(null);
+        void fetchOrders();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to save changes.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Network error saving changes.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Filter lists
+  const filteredMenuItems = menuItems.filter(item => 
+    item.available &&
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    !editItems.some(ei => ei.menuItemId === item.id)
+  );
+
+  const filteredReplacementItems = menuItems.filter(item => 
+    item.available &&
+    item.name.toLowerCase().includes(replaceSearchQuery.toLowerCase()) &&
+    !editItems.some(ei => ei.menuItemId === item.id)
+  );
+
+  const localTotal = editItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
   // Sync pendingTables + savedTables when tables or username changes (e.g. fresh page load)
   useEffect(() => {
@@ -626,9 +794,266 @@ export default function WaiterOrders() {
               order={order}
               onMarkComplete={handleMarkComplete}
               onUpdateStatus={handleUpdateStatus}
+              onEditOrder={setSelectedOrderForEdit}
               completing={completingId === order.id}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── Edit Order Modal ─────────────────────────────────────── */}
+      {selectedOrderForEdit && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-gray-100 animate-scale-up">
+            
+            {/* Header */}
+            <div className="bg-amber-600 text-white px-6 py-5 flex items-center justify-between shadow-sm">
+              <div>
+                <h3 className="font-black text-lg">Edit Order Items</h3>
+                <p className="text-xs text-amber-100 mt-0.5 font-medium">
+                  Table {selectedOrderForEdit.table.tableNumber} • ID: {selectedOrderForEdit.id.substring(0, 8)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderForEdit(null)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 transition text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content Scroll Area */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              
+              {/* Active Items list */}
+              <div>
+                <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Current Ordered Items</h4>
+                {editItems.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic py-4 text-center">No items in order. Order will be cancelled upon saving.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {editItems.map((item, idx) => {
+                      const isItemUnavailable = item.isUnavailable;
+                      return (
+                        <div
+                          key={item.id || idx}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl border transition-all ${
+                            isItemUnavailable
+                              ? 'bg-red-50 border-red-200'
+                              : 'bg-gray-55 border-gray-150 hover:bg-gray-100/75'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-bold text-sm ${isItemUnavailable ? 'text-red-700' : 'text-gray-900'}`}>
+                                {item.name}
+                              </span>
+                              {isItemUnavailable && (
+                                <span className="bg-red-100 text-red-800 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
+                                  <AlertTriangle size={8} /> Unavailable
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5 font-medium">
+                              Price: {item.price ? `₹${item.price.toFixed(2)}` : '₹0.00'}
+                              {item.specialInstructions && (
+                                <span className="text-amber-600 ml-2 italic font-semibold">
+                                  *{item.specialInstructions}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                            {/* Quantity Adjustment */}
+                            <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm p-1">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateLocalQty(idx, -1)}
+                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition active:scale-90 cursor-pointer"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="w-8 text-center font-extrabold text-sm text-gray-800">{item.quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateLocalQty(idx, 1)}
+                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition active:scale-90 cursor-pointer"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+
+                            {/* Actions: Toggle Availability / Replace / Delete */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleLocalUnavailable(idx)}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                  isItemUnavailable
+                                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                    : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                                }`}
+                              >
+                                {isItemUnavailable ? 'Available' : 'Unavailable'}
+                              </button>
+
+                              {isItemUnavailable && (
+                                <button
+                                  type="button"
+                                  onClick={() => setReplacingIndex(idx)}
+                                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition cursor-pointer"
+                                >
+                                  Replace
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLocalItem(idx)}
+                                className="p-2 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-xl transition border border-gray-250 hover:border-red-200 cursor-pointer"
+                                aria-label="Remove item"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Inline replacement selection if replacingIndex is set */}
+              {replacingIndex !== null && (
+                <div className="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl animate-slide-up space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h5 className="text-xs font-extrabold text-blue-900 uppercase">
+                      Select Replacement for "{editItems[replacingIndex]?.name}"
+                    </h5>
+                    <button
+                      type="button"
+                      onClick={() => setReplacingIndex(null)}
+                      className="text-xs font-bold text-gray-500 hover:underline cursor-pointer"
+                    >
+                      Cancel Replacement
+                    </button>
+                  </div>
+                  
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Search dishes to replace..."
+                      value={replaceSearchQuery}
+                      onChange={(e) => setReplaceSearchQuery(e.target.value)}
+                      className="w-full bg-white border border-gray-250 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 font-medium shadow-sm"
+                    />
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1 bg-white rounded-xl border border-gray-200 p-2 shadow-inner">
+                    {filteredReplacementItems.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-3 text-center">No available matching dishes.</p>
+                    ) : (
+                      filteredReplacementItems.map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleReplaceLocalItem(replacingIndex, item)}
+                          className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-gray-750 hover:bg-blue-50 hover:text-blue-800 transition flex justify-between items-center cursor-pointer"
+                        >
+                          <span>{item.name}</span>
+                          <span className="text-emerald-600 font-extrabold">₹{item.price.toFixed(2)}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Add New Item section */}
+              {replacingIndex === null && (
+                <div className="p-4 bg-gray-55 border border-gray-200 rounded-2xl space-y-3">
+                  <h4 className="text-xs font-black text-gray-450 uppercase tracking-wider">Add New Dish</h4>
+                  
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Search menu to add dish..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-white border border-gray-250 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium shadow-sm"
+                    />
+                  </div>
+
+                  {searchQuery.trim() !== '' && (
+                    <div className="max-h-48 overflow-y-auto space-y-1 bg-white rounded-xl border border-gray-200 p-2 shadow-inner">
+                      {filteredMenuItems.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-3 text-center">No active matching dishes found.</p>
+                      ) : (
+                        filteredMenuItems.map(item => (
+                          <div
+                            key={item.id}
+                            className="flex justify-between items-center px-3 py-2 rounded-lg hover:bg-amber-50 transition border border-transparent hover:border-amber-100"
+                          >
+                            <div>
+                              <p className="text-xs font-bold text-gray-800">{item.name}</p>
+                              <p className="text-[10px] text-gray-500 mt-0.5">₹{item.price.toFixed(2)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddLocalItem(item)}
+                              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 active:scale-95 transition cursor-pointer"
+                            >
+                              <Plus size={11} strokeWidth={3} /> Add
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer Summary & Actions */}
+            <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="text-left">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Estimated Total</span>
+                <span className="text-xl font-black text-gray-950">₹{localTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderForEdit(null)}
+                  className="px-5 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 text-sm font-semibold active:scale-95 transition cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveChanges}
+                  className={`px-6 py-2.5 rounded-xl text-sm font-bold text-white shadow-md transition active:scale-95 flex items-center gap-2 cursor-pointer ${
+                    isSaving
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/10'
+                  }`}
+                >
+                  {isSaving ? (
+                    <><Activity size={16} className="animate-spin" /> Saving…</>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
     </div>

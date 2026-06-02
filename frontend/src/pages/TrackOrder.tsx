@@ -15,7 +15,8 @@ import {
   CreditCard,
   HandPlatter,
   PartyPopper,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function TrackOrderPage() {
@@ -25,6 +26,7 @@ export default function TrackOrderPage() {
   const [loading, setLoading] = useState(true);
   const [markingReceived, setMarkingReceived] = useState(false);
   const [markReceivedError, setMarkReceivedError] = useState('');
+  const [menuItems, setMenuItems] = useState<any[]>([]);
   
   // Realtime updates via Server-Sent Events
   const { lastEvent } = useEventSource('/api/events');
@@ -47,6 +49,17 @@ export default function TrackOrderPage() {
   useEffect(() => {
     fetchOrder();
   }, [fetchOrder]);
+
+  // Fetch full menu when there's an unavailable item
+  useEffect(() => {
+    const hasUnavailable = order?.items.some(i => i.isUnavailable);
+    if (hasUnavailable && menuItems.length === 0) {
+      fetch('/api/menu')
+        .then(res => res.json())
+        .then(data => setMenuItems(data))
+        .catch(err => console.error(err));
+    }
+  }, [order, menuItems]);
 
   useEffect(() => {
     if (lastEvent?.type !== 'ORDER_UPDATE') return;
@@ -193,6 +206,62 @@ export default function TrackOrderPage() {
           </p>
         </div>
 
+        {/* UNAVAILABLE DISH ALERT */}
+        {order?.items.some(i => i.isUnavailable) && (() => {
+          const unavailableItems = order.items.filter(i => i.isUnavailable);
+          const targetCategoryIds = new Set(
+            menuItems
+              .filter(m => unavailableItems.some(ui => ui.menuItem.id === m.id))
+              .map(m => m.categoryId)
+          );
+          const orderedItemIds = new Set(order.items.map(i => i.menuItem.id));
+          const recommendedItems = menuItems.filter(m => 
+            m.available && 
+            targetCategoryIds.has(m.categoryId) && 
+            !orderedItemIds.has(m.id)
+          ).slice(0, 3);
+
+          return (
+            <div className="bg-red-50 border-2 border-red-200 border-dashed rounded-3xl p-5 shadow-lg shadow-red-50/50 animate-pulse space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600 shrink-0">
+                  <AlertTriangle size={20} />
+                 </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-extrabold text-red-950 text-sm">Dish Temporarily Unavailable</h4>
+                  <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                    We are very sorry, but the following item(s) are currently out of stock in the kitchen:
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {unavailableItems.map(item => (
+                      <span key={item.id} className="inline-block bg-red-100 text-red-900 text-[10px] font-black px-2.5 py-1 rounded-lg border border-red-200 shadow-sm">
+                        {item.menuItem.name}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-red-600 mt-2 font-bold bg-white/60 px-2.5 py-1.5 rounded-lg border border-red-100 inline-block">
+                    Our staff will help you replace this table order shortly.
+                  </p>
+                </div>
+              </div>
+
+              {recommendedItems.length > 0 && (
+                <div className="pt-3.5 border-t border-red-200/50">
+                  <p className="text-[10px] text-red-800 font-extrabold uppercase tracking-wider mb-2">Recommended alternatives from menu</p>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {recommendedItems.map(item => (
+                      <div key={item.id} className="flex justify-between items-center bg-white border border-red-250 p-2.5 rounded-xl shadow-sm">
+                        <span className="text-xs font-bold text-gray-800">{item.name}</span>
+                        <span className="text-xs font-black text-emerald-600">₹{item.price.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Realtime Progress Steps */}
         {order.status !== 'CANCELLED' && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -300,8 +369,13 @@ export default function TrackOrderPage() {
               <div key={item.id} className="pt-3 first:pt-0">
                 <div className="flex justify-between text-sm items-start">
                   <div className="flex-1 pr-4">
-                    <p className="font-bold text-gray-800 text-xs">
+                    <p className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
                       {item.menuItem.name}
+                      {item.isUnavailable && (
+                        <span className="bg-red-100 text-red-800 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
+                          Unavailable
+                        </span>
+                      )}
                     </p>
                     {item.specialInstructions && (
                       <p className="text-[10px] text-red-500 italic mt-0.5">

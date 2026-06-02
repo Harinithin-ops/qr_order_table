@@ -19,7 +19,11 @@ import {
   generateBillForOrder,
   cancelOrder,
   addCustomItemToOrder,
-  deleteOrderItem
+  deleteOrderItem,
+  updateOrderItem,
+  replaceOrderItem,
+  addItemToOrder,
+  updateOrderItems
 } from './controllers/orders.controller.js';
 import {
   createBill,
@@ -125,6 +129,10 @@ app.post('/api/waiter/bills/:id/custom-item', authMiddleware, addCustomItemToBil
 app.patch('/api/waiter/bills/:id/pay', authMiddleware, markBillPaid);
 app.post('/api/waiter/orders/:orderId/custom-item', authMiddleware, addCustomItemToOrder);
 app.delete('/api/waiter/order-items/:itemId', authMiddleware, deleteOrderItem);
+app.patch('/api/waiter/order-items/:itemId', authMiddleware, updateOrderItem);
+app.post('/api/waiter/order-items/:itemId/replace', authMiddleware, replaceOrderItem);
+app.post('/api/waiter/orders/:orderId/add-item', authMiddleware, addItemToOrder);
+app.put('/api/waiter/orders/:orderId/items', authMiddleware, updateOrderItems);
 
 // Customer-facing unified checkout (merges all orders for a table into 1 bill)
 app.post('/api/tables/:tableId/checkout', tableCheckout);

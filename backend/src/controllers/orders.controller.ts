@@ -666,3 +666,292 @@ export async function deleteOrderItem(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to delete order item' });
   }
 }
+
+export async function updateOrderItem(req: Request, res: Response) {
+  try {
+    const { itemId } = req.params;
+    const { quantity, isUnavailable } = req.body;
+
+    const orderItem = await prisma.orderItem.findUnique({
+      where: { id: itemId },
+      include: { order: true }
+    });
+
+    if (!orderItem) {
+      return res.status(404).json({ error: 'Order item not found' });
+    }
+
+    if (orderItem.order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    const data: any = {};
+    if (quantity !== undefined) {
+      data.quantity = Math.max(1, Number(quantity));
+    }
+    if (isUnavailable !== undefined) {
+      data.isUnavailable = Boolean(isUnavailable);
+    }
+
+    const updatedItem = await prisma.orderItem.update({
+      where: { id: itemId },
+      data,
+      include: { menuItem: true }
+    });
+
+    // Recalculate totals
+    const remainingItems = await prisma.orderItem.findMany({
+      where: { orderId: orderItem.orderId }
+    });
+    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    await prisma.order.update({
+      where: { id: orderItem.orderId },
+      data: { total: newTotal }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: orderItem.orderId,
+      tableId: orderItem.order.tableId,
+    });
+
+    return res.json(updatedItem);
+  } catch (error) {
+    console.error('Failed to update order item:', error);
+    return res.status(500).json({ error: 'Failed to update order item' });
+  }
+}
+
+export async function replaceOrderItem(req: Request, res: Response) {
+  try {
+    const { itemId } = req.params;
+    const { menuItemId, quantity } = req.body;
+
+    if (!menuItemId) {
+      return res.status(400).json({ error: 'menuItemId is required for replacement' });
+    }
+
+    const orderItem = await prisma.orderItem.findUnique({
+      where: { id: itemId },
+      include: { order: true, menuItem: true }
+    });
+
+    if (!orderItem) {
+      return res.status(404).json({ error: 'Order item not found' });
+    }
+
+    if (orderItem.order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    const newMenuItem = await prisma.menuItem.findUnique({
+      where: { id: menuItemId }
+    });
+
+    if (!newMenuItem) {
+      return res.status(404).json({ error: 'Replacement menu item not found' });
+    }
+
+    const targetQty = quantity !== undefined ? Math.max(1, Number(quantity)) : orderItem.quantity;
+
+    const updatedItem = await prisma.orderItem.update({
+      where: { id: itemId },
+      data: {
+        menuItemId: newMenuItem.id,
+        price: newMenuItem.price,
+        quantity: targetQty,
+        isUnavailable: false
+      },
+      include: { menuItem: true }
+    });
+
+    // Recalculate totals
+    const remainingItems = await prisma.orderItem.findMany({
+      where: { orderId: orderItem.orderId }
+    });
+    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    await prisma.order.update({
+      where: { id: orderItem.orderId },
+      data: { total: newTotal }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: orderItem.orderId,
+      tableId: orderItem.order.tableId,
+      replacedItemName: orderItem.menuItem?.name || 'Item',
+      newItemName: newMenuItem.name
+    });
+
+    return res.json(updatedItem);
+  } catch (error) {
+    console.error('Failed to replace order item:', error);
+    return res.status(500).json({ error: 'Failed to replace order item' });
+  }
+}
+
+export async function addItemToOrder(req: Request, res: Response) {
+  try {
+    const { orderId } = req.params;
+    const { menuItemId, quantity = 1, specialInstructions } = req.body;
+
+    if (!menuItemId) {
+      return res.status(400).json({ error: 'menuItemId is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    const menuItem = await prisma.menuItem.findUnique({
+      where: { id: menuItemId }
+    });
+
+    if (!menuItem) {
+      return res.status(404).json({ error: 'Menu item not found' });
+    }
+
+    const existingItem = await prisma.orderItem.findFirst({
+      where: {
+        orderId,
+        menuItemId,
+        specialInstructions: specialInstructions || null
+      }
+    });
+
+    let resultItem;
+    if (existingItem) {
+      resultItem = await prisma.orderItem.update({
+        where: { id: existingItem.id },
+        data: {
+          quantity: existingItem.quantity + Math.max(1, Number(quantity)),
+          isUnavailable: false
+        },
+        include: { menuItem: true }
+      });
+    } else {
+      resultItem = await prisma.orderItem.create({
+        data: {
+          orderId,
+          menuItemId,
+          quantity: Math.max(1, Number(quantity)),
+          price: menuItem.price,
+          specialInstructions: specialInstructions || null,
+          isUnavailable: false
+        },
+        include: { menuItem: true }
+      });
+    }
+
+    const remainingItems = await prisma.orderItem.findMany({
+      where: { orderId }
+    });
+    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { total: newTotal }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId,
+      tableId: order.tableId,
+    });
+
+    return res.json(resultItem);
+  } catch (error) {
+    console.error('Failed to add item to order:', error);
+    return res.status(500).json({ error: 'Failed to add item to order' });
+  }
+}
+
+export async function updateOrderItems(req: Request, res: Response) {
+  try {
+    const { orderId } = req.params;
+    const { items } = req.body; // array of { menuItemId, quantity, price, isUnavailable, specialInstructions }
+
+    if (!items) {
+      return res.status(400).json({ error: 'Items list is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { bill: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    if (order.bill) {
+      return res.status(400).json({ error: 'Bill already generated for this order' });
+    }
+
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      // 1. Delete all existing items
+      await tx.orderItem.deleteMany({
+        where: { orderId }
+      });
+
+      // 2. If new items is empty, cancel the order
+      if (items.length === 0) {
+        return await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'CANCELLED', total: 0 },
+          include: { table: true, items: { include: { menuItem: true } } }
+        });
+      }
+
+      // 3. Create the new items
+      await tx.orderItem.createMany({
+        data: items.map((item: any) => ({
+          orderId,
+          menuItemId: item.menuItemId,
+          quantity: Math.max(1, Number(item.quantity)),
+          price: Number(item.price),
+          isUnavailable: Boolean(item.isUnavailable),
+          specialInstructions: item.specialInstructions || null
+        }))
+      });
+
+      // 4. Recalculate order total
+      const newTotal = items.reduce((sum: number, item: any) => sum + (Number(item.price) * Math.max(1, Number(item.quantity))), 0);
+
+      return await tx.order.update({
+        where: { id: orderId },
+        data: { total: newTotal },
+        include: {
+          table: true,
+          items: {
+            include: { menuItem: true }
+          }
+        }
+      });
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: updatedOrder.id,
+      tableId: updatedOrder.tableId,
+      status: updatedOrder.status
+    });
+
+    return res.json(updatedOrder);
+  } catch (error) {
+    console.error('Failed to update order items:', error);
+    return res.status(500).json({ error: 'Failed to update order items' });
+  }
+}
+
+

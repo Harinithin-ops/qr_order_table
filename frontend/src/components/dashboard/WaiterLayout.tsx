@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, CheckCircle2, Utensils, LogOut,
+  LayoutDashboard, Utensils, LogOut,
   BookOpen, User, ClipboardList, X, Menu,
 } from 'lucide-react';
 import { HOTEL_NAME } from '@/lib/utils';
@@ -10,7 +10,6 @@ import { useEventSource } from '@/hooks/useEventSource';
 const NAV_ITEMS = [
   { name: 'Orders',  path: '/waiter/orders',    icon: LayoutDashboard, mobileLabel: 'Orders'  },
   { name: 'Queue',   path: '/waiter/queue',      icon: ClipboardList,   mobileLabel: 'Queue'   },
-  { name: 'Done',    path: '/waiter/completed',  icon: CheckCircle2,    mobileLabel: 'Done'    },
   { name: 'Menu',    path: '/waiter/menu',       icon: BookOpen,        mobileLabel: 'Menu'    },
   { name: 'Profile', path: '/waiter/profile',    icon: User,            mobileLabel: 'Profile' },
 ];
@@ -281,7 +280,7 @@ export default function WaiterLayout() {
         bg-white border-t border-gray-200
         shadow-[0_-2px_12px_rgba(0,0,0,0.08)]
       ">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-4 h-16">
           {NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const active = isActive(item.path);

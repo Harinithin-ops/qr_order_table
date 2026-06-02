@@ -78,6 +78,7 @@ model OrderItem {
   quantity            Int
   price               Float
   specialInstructions String?
+  isUnavailable       Boolean  @default(false)
 }
 
 model Bill {

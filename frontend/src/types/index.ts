@@ -57,6 +57,7 @@ export interface OrderWithItems {
     quantity: number;
     price: number;
     specialInstructions: string | null;
+    isUnavailable?: boolean;
     menuItem: {
       id: string;
       name: string;
