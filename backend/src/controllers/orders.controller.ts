@@ -4,6 +4,49 @@ import { eventEmitter } from '../lib/event-emitter.js';
 import { generateBillNumber, TAX_RATE, getCategoryTimingStatus } from '../lib/utils.js';
 import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+async function syncOrderAndBillTotals(orderId: string, tx?: any) {
+  const db = tx || prisma;
+  
+  const items = await db.orderItem.findMany({
+    where: { orderId }
+  });
+  
+  const newTotal = items
+    .filter((item: any) => !item.isUnavailable)
+    .reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    
+  const updatedOrder = await db.order.update({
+    where: { id: orderId },
+    data: { total: newTotal },
+    include: {
+      table: true,
+      items: {
+        include: {
+          menuItem: true
+        }
+      },
+      bill: true
+    }
+  });
+  
+  if (updatedOrder.bill) {
+    const subtotal = newTotal;
+    const taxAmount = subtotal * TAX_RATE;
+    const total = subtotal + taxAmount;
+    
+    await db.bill.update({
+      where: { id: updatedOrder.bill.id },
+      data: {
+        subtotal,
+        taxAmount,
+        total
+      }
+    });
+  }
+  
+  return updatedOrder;
+}
+
 export async function createOrder(req: Request, res: Response) {
   try {
     const { tableId, items, notes } = req.body;
@@ -251,29 +294,6 @@ export async function getOrders(req: Request, res: Response) {
         createdAt: status === 'completed' ? 'desc' : 'asc',
       },
     });
-
-    if (authReq.username !== 'admin') {
-      const sanitizedOrders = orders.map(order => ({
-        ...order,
-        total: 0,
-        bill: order.bill ? {
-          id: order.bill.id,
-          billNumber: order.bill.billNumber,
-          paymentStatus: order.bill.paymentStatus,
-          paymentMethod: order.bill.paymentMethod,
-          paymentReference: order.bill.paymentReference,
-        } : null,
-        items: order.items.map(item => ({
-          ...item,
-          price: 0,
-          menuItem: {
-            ...item.menuItem,
-            price: 0
-          }
-        }))
-      }));
-      return res.json(sanitizedOrders);
-    }
 
     return res.json(orders);
   } catch (error) {
@@ -548,10 +568,6 @@ export async function addCustomItemToOrder(req: Request, res: Response) {
     });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    if (order.bill) {
-      return res.status(400).json({ error: 'Bill already generated for this order.' });
-    }
-
     // Find the first category in MenuCategory
     const firstCategory = await prisma.menuCategory.findFirst();
     if (!firstCategory) {
@@ -579,18 +595,8 @@ export async function addCustomItemToOrder(req: Request, res: Response) {
       }
     });
 
-    // Recalculate total for the order
-    const allItems = await prisma.orderItem.findMany({ where: { orderId } });
-    const newTotal = allItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    const updatedOrder = await prisma.order.update({
-      where: { id: orderId },
-      data: { total: newTotal },
-      include: {
-        table: true,
-        items: { include: { menuItem: true } }
-      }
-    });
+    // Recalculate total and sync bill
+    const updatedOrder = await syncOrderAndBillTotals(orderId);
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId,
@@ -621,37 +627,19 @@ export async function deleteOrderItem(req: Request, res: Response) {
       return res.status(400).json({ error: 'Cannot modify a completed order' });
     }
 
-    // Check if order has a bill
-    const orderWithBill = await prisma.order.findUnique({
-      where: { id: orderItem.orderId },
-      include: { bill: true }
-    });
-    if (orderWithBill?.bill) {
-      return res.status(400).json({ error: 'Bill already generated.' });
-    }
-
     // Delete the OrderItem
     await prisma.orderItem.delete({
       where: { id: itemId }
     });
 
-    // Find remaining items
-    const remainingItems = await prisma.orderItem.findMany({
-      where: { orderId: orderItem.orderId }
-    });
+    // Recalculate totals and sync bill
+    const updatedOrder = await syncOrderAndBillTotals(orderItem.orderId);
 
-    if (remainingItems.length === 0) {
+    if (updatedOrder.items.length === 0) {
       // If no items left, cancel the order
       await prisma.order.update({
         where: { id: orderItem.orderId },
-        data: { status: 'CANCELLED', total: 0 }
-      });
-    } else {
-      // Recalculate totals
-      const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      await prisma.order.update({
-        where: { id: orderItem.orderId },
-        data: { total: newTotal }
+        data: { status: 'CANCELLED' }
       });
     }
 
@@ -699,16 +687,8 @@ export async function updateOrderItem(req: Request, res: Response) {
       include: { menuItem: true }
     });
 
-    // Recalculate totals
-    const remainingItems = await prisma.orderItem.findMany({
-      where: { orderId: orderItem.orderId }
-    });
-    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    await prisma.order.update({
-      where: { id: orderItem.orderId },
-      data: { total: newTotal }
-    });
+    // Recalculate totals and sync bill
+    await syncOrderAndBillTotals(orderItem.orderId);
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId: orderItem.orderId,
@@ -765,16 +745,8 @@ export async function replaceOrderItem(req: Request, res: Response) {
       include: { menuItem: true }
     });
 
-    // Recalculate totals
-    const remainingItems = await prisma.orderItem.findMany({
-      where: { orderId: orderItem.orderId }
-    });
-    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    await prisma.order.update({
-      where: { id: orderItem.orderId },
-      data: { total: newTotal }
-    });
+    // Recalculate totals and sync bill
+    await syncOrderAndBillTotals(orderItem.orderId);
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId: orderItem.orderId,
@@ -851,15 +823,8 @@ export async function addItemToOrder(req: Request, res: Response) {
       });
     }
 
-    const remainingItems = await prisma.orderItem.findMany({
-      where: { orderId }
-    });
-    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { total: newTotal }
-    });
+    // Recalculate totals and sync bill
+    await syncOrderAndBillTotals(orderId);
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId,
@@ -895,10 +860,6 @@ export async function updateOrderItems(req: Request, res: Response) {
       return res.status(400).json({ error: 'Cannot modify a completed order' });
     }
 
-    if (order.bill) {
-      return res.status(400).json({ error: 'Bill already generated for this order' });
-    }
-
     const updatedOrder = await prisma.$transaction(async (tx) => {
       // 1. Delete all existing items
       await tx.orderItem.deleteMany({
@@ -907,11 +868,18 @@ export async function updateOrderItems(req: Request, res: Response) {
 
       // 2. If new items is empty, cancel the order
       if (items.length === 0) {
-        return await tx.order.update({
+        const cancelledOrder = await tx.order.update({
           where: { id: orderId },
           data: { status: 'CANCELLED', total: 0 },
-          include: { table: true, items: { include: { menuItem: true } } }
+          include: { table: true, items: { include: { menuItem: true } }, bill: true }
         });
+        if (cancelledOrder.bill) {
+          await tx.bill.update({
+            where: { id: cancelledOrder.bill.id },
+            data: { subtotal: 0, taxAmount: 0, total: 0 }
+          });
+        }
+        return cancelledOrder;
       }
 
       // 3. Create the new items
@@ -926,19 +894,34 @@ export async function updateOrderItems(req: Request, res: Response) {
         }))
       });
 
-      // 4. Recalculate order total
-      const newTotal = items.reduce((sum: number, item: any) => sum + (Number(item.price) * Math.max(1, Number(item.quantity))), 0);
+      // 4. Recalculate order total, excluding unavailable items
+      const newTotal = items
+        .filter((item: any) => !item.isUnavailable)
+        .reduce((sum: number, item: any) => sum + (Number(item.price) * Math.max(1, Number(item.quantity))), 0);
 
-      return await tx.order.update({
+      const orderUpdate = await tx.order.update({
         where: { id: orderId },
         data: { total: newTotal },
         include: {
           table: true,
           items: {
             include: { menuItem: true }
-          }
+          },
+          bill: true
         }
       });
+
+      if (orderUpdate.bill) {
+        const subtotal = newTotal;
+        const taxAmount = subtotal * TAX_RATE;
+        const total = subtotal + taxAmount;
+        await tx.bill.update({
+          where: { id: orderUpdate.bill.id },
+          data: { subtotal, taxAmount, total }
+        });
+      }
+
+      return orderUpdate;
     });
 
     eventEmitter.emit('ORDER_UPDATE', {
@@ -976,10 +959,6 @@ export async function replaceCustomerOrderItem(req: Request, res: Response) {
       return res.status(400).json({ error: 'Cannot modify a completed order' });
     }
 
-    if (order.bill) {
-      return res.status(400).json({ error: 'Bill already generated for this order' });
-    }
-
     const orderItem = await prisma.orderItem.findUnique({
       where: { id: itemId }
     });
@@ -1006,16 +985,8 @@ export async function replaceCustomerOrderItem(req: Request, res: Response) {
       include: { menuItem: true }
     });
 
-    // Recalculate totals
-    const remainingItems = await prisma.orderItem.findMany({
-      where: { orderId }
-    });
-    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { total: newTotal }
-    });
+    // Recalculate totals and sync bill
+    await syncOrderAndBillTotals(orderId);
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId,
