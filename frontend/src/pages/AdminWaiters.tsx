@@ -296,7 +296,8 @@ export default function AdminWaitersPage() {
   }
 
   return (
-    <div className="p-6 md:p-8 animate-slide-up max-w-6xl mx-auto">
+    <>
+      <div className="p-6 md:p-8 animate-slide-up max-w-6xl mx-auto">
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-gray-200 pb-6">
         <div>
@@ -523,6 +524,7 @@ export default function AdminWaitersPage() {
           </div>
         </div>
       )}
+    </div>
 
       {/* ── Register Waiter Modal ─────────────────────────────────────────── */}
       {showAddModal && (
@@ -805,12 +807,13 @@ export default function AdminWaitersPage() {
       {/* ── Waiter Profile Details Modal ─────────────────────────────────────────── */}
       {detailTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-7 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-7 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden md:flex md:flex-col md:max-h-[85vh] my-auto">
             
             {/* Banner top styling accent */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500 z-10" />
             
-            <div className="flex justify-between items-start mb-4 pt-1">
+            {/* Sticky Header on Laptop / Standard on Mobile */}
+            <div className="flex justify-between items-start mb-4 pt-1 md:pt-2 md:border-b md:border-gray-100 md:pb-3">
               <div className="flex items-center gap-3">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg uppercase shadow-md border border-black/5 ${getAvatarBgColor(detailTarget.username)}`}>
                   {(detailTarget.displayName || detailTarget.username).slice(0, 2)}
@@ -841,7 +844,8 @@ export default function AdminWaitersPage() {
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Scrollable Content Area on Laptop / Standard Flow on Mobile */}
+            <div className="space-y-4 md:overflow-y-auto md:flex-1 md:pr-1 md:scrollbar-thin md:pb-2">
               {/* Tables Assigned & Overall Table Breakdown */}
               <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100">
                 <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 font-sans">
@@ -852,28 +856,28 @@ export default function AdminWaitersPage() {
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {detailTarget.tables
-                      .slice()
-                      .sort((a, b) => a.tableNumber - b.tableNumber)
-                      .map(t => {
-                        const tableStats = performanceData?.tableBreakdown.find(tb => tb.tableNumber === t.tableNumber);
-                        return (
-                          <div
-                            key={t.id}
-                            className="flex items-center justify-between bg-amber-50/50 border border-amber-100 text-amber-900 p-2 rounded-xl text-[11px] shadow-sm font-sans"
-                          >
-                            <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
-                              <TableIcon size={10} /> Table {t.tableNumber}
-                            </span>
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
-                              {performanceLoading ? (
-                                '...'
-                              ) : (
-                                `${tableStats?.completedOrders ?? 0} done`
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
+                       .slice()
+                       .sort((a, b) => a.tableNumber - b.tableNumber)
+                       .map(t => {
+                         const tableStats = performanceData?.tableBreakdown.find(tb => tb.tableNumber === t.tableNumber);
+                         return (
+                           <div
+                             key={t.id}
+                             className="flex items-center justify-between bg-amber-50/50 border border-amber-100 text-amber-900 p-2 rounded-xl text-[11px] shadow-sm font-sans"
+                           >
+                             <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
+                               <TableIcon size={10} /> Table {t.tableNumber}
+                             </span>
+                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
+                               {performanceLoading ? (
+                                 '...'
+                               ) : (
+                                 `${tableStats?.completedOrders ?? 0} done`
+                               )}
+                             </span>
+                           </div>
+                         );
+                       })}
                   </div>
                 )}
               </div>
@@ -991,13 +995,13 @@ export default function AdminWaitersPage() {
                   </div>
                 )}
               </div>
-
             </div>
-            
-            <div className="mt-6 pt-3 border-t border-gray-100 flex justify-end">
+
+            {/* Sticky Footer */}
+            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
               <button
                 onClick={() => setDetailTarget(null)}
-                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition font-sans shadow-sm"
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition font-sans shadow-sm"
               >
                 Close Profile
               </button>
@@ -1005,6 +1009,6 @@ export default function AdminWaitersPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
