@@ -17,7 +17,6 @@ function createPrismaClient(): PrismaClient {
     throw new Error('DATABASE_URL or DIRECT_URL must be set in environment variables.');
   }
 
-  // Reuse pool across invocations in production (serverless warm starts)
   if (!globalForPrisma.pgPool) {
     globalForPrisma.pgPool = new pg.Pool({
       connectionString,
@@ -28,6 +27,9 @@ function createPrismaClient(): PrismaClient {
       connectionTimeoutMillis: 10000,
       // Retry failed connections
       allowExitOnIdle: false,
+      ssl: {
+        rejectUnauthorized: false
+      }
     });
 
     // Log pool errors to prevent unhandled rejections
