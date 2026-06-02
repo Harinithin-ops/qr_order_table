@@ -23,7 +23,8 @@ import {
   updateOrderItem,
   replaceOrderItem,
   addItemToOrder,
-  updateOrderItems
+  updateOrderItems,
+  replaceCustomerOrderItem
 } from './controllers/orders.controller.js';
 import {
   createBill,
@@ -109,6 +110,7 @@ app.put('/api/orders/:id/status', authMiddleware, updateOrderStatus); // Support
 app.post('/api/orders/:id/mark-received', markReceived);
 app.post('/api/orders/:id/generate-bill', generateBillForOrder);
 app.post('/api/orders/:id/cancel', cancelOrder);
+app.post('/api/orders/:orderId/items/:itemId/replace', replaceCustomerOrderItem);
 
 // Bills (Admin only)
 app.post('/api/bills', authMiddleware, adminOnly, createBill);

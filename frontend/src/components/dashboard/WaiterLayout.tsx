@@ -15,7 +15,8 @@ const NAV_ITEMS = [
 ];
 
 export default function WaiterLayout() {
-  const [activeCount, setActiveCount] = useState(0);
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [queueCount, setQueueCount] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [waiterUsername, setWaiterUsername] = useState('Waiter');
   const { lastEvent } = useEventSource('/api/events');
@@ -27,8 +28,12 @@ export default function WaiterLayout() {
       const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setActiveCount(
-          data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED').length,
+        const activeOrders = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED');
+        setOrdersCount(
+          activeOrders.filter((o: any) => ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status)).length
+        );
+        setQueueCount(
+          activeOrders.filter((o: any) => ['SERVED', 'PENDING'].includes(o.status)).length
         );
       }
     } catch {}
@@ -115,9 +120,14 @@ export default function WaiterLayout() {
                   <Icon size={17} className={active ? 'text-white' : 'text-amber-200'} />
                   <span>{item.name}</span>
                 </div>
-                {item.path === '/waiter/orders' && activeCount > 0 && (
+                {item.path === '/waiter/orders' && ordersCount > 0 && (
                   <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
-                    {activeCount}
+                    {ordersCount}
+                  </span>
+                )}
+                {item.path === '/waiter/queue' && queueCount > 0 && (
+                  <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
+                    {queueCount}
                   </span>
                 )}
               </Link>
@@ -169,9 +179,9 @@ export default function WaiterLayout() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {activeCount > 0 && (
+          {(ordersCount + queueCount) > 0 && (
             <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
-              {activeCount} active
+              {ordersCount + queueCount} active
             </span>
           )}
           <button
@@ -235,9 +245,14 @@ export default function WaiterLayout() {
                   <Icon size={18} className={active ? 'text-white' : 'text-amber-200'} />
                   <span>{item.name}</span>
                 </div>
-                {item.path === '/waiter/orders' && activeCount > 0 && (
+                {item.path === '/waiter/orders' && ordersCount > 0 && (
                   <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
-                    {activeCount}
+                    {ordersCount}
+                  </span>
+                )}
+                {item.path === '/waiter/queue' && queueCount > 0 && (
+                  <span className="bg-white text-amber-600 text-xs font-black px-2 py-0.5 rounded-full">
+                    {queueCount}
                   </span>
                 )}
               </Link>
@@ -299,9 +314,15 @@ export default function WaiterLayout() {
                 <div className={`relative p-1.5 rounded-xl transition-all ${active ? 'bg-amber-50' : ''}`}>
                   <Icon size={20} strokeWidth={active ? 2.5 : 2} />
                   {/* Order badge */}
-                  {item.path === '/waiter/orders' && activeCount > 0 && (
+                  {item.path === '/waiter/orders' && ordersCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                      {activeCount > 9 ? '9+' : activeCount}
+                      {ordersCount > 9 ? '9+' : ordersCount}
+                    </span>
+                  )}
+                  {/* Queue badge */}
+                  {item.path === '/waiter/queue' && queueCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                      {queueCount > 9 ? '9+' : queueCount}
                     </span>
                   )}
                 </div>

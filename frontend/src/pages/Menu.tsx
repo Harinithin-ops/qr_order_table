@@ -10,6 +10,7 @@ import { WaiterCallButton } from '@/components/menu/WaiterCallButton';
 import { CartProvider } from '@/hooks/useCart';
 import { useEventSource } from '@/hooks/useEventSource';
 import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
+import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
 import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2, ShoppingBag } from 'lucide-react';
 
 export default function MenuPage() {
@@ -25,6 +26,9 @@ export default function MenuPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [inputName, setInputName] = useState('');
+
+  const [activeOrders, setActiveOrders] = useState<OrderWithItems[]>([]);
+  const { lastEvent } = useEventSource('/api/events');
 
   useEffect(() => {
     const savedName = localStorage.getItem('kh_customer_name');
@@ -86,6 +90,33 @@ export default function MenuPage() {
       clearInterval(interval);
     };
   }, [tableId]);
+  const fetchActiveOrders = useCallback(async () => {
+    if (orderIds.length === 0) {
+      setActiveOrders([]);
+      return;
+    }
+    try {
+      const fetched = await Promise.all(
+        orderIds.map(async id => {
+          const res = await fetch(`/api/orders/${id}`);
+          return res.ok ? res.json() : null;
+        })
+      );
+      setActiveOrders(fetched.filter((o): o is OrderWithItems => o !== null && o.status !== 'PAID'));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [orderIds]);
+
+  useEffect(() => {
+    fetchActiveOrders();
+  }, [fetchActiveOrders]);
+
+  useEffect(() => {
+    if (lastEvent?.type === 'ORDER_UPDATE') {
+      setTimeout(() => fetchActiveOrders(), 500);
+    }
+  }, [lastEvent, fetchActiveOrders]);
 
   const handleSelectCategory = (id: string) => {
     setActiveCategory(id);
@@ -342,6 +373,13 @@ export default function MenuPage() {
           onOrderPlaced={handleOrderPlaced}
           menuItems={menuItems}
         />
+        {activeOrders.length > 0 && menuItems.length > 0 && (
+          <CustomerUnavailabilityModal
+            activeOrders={activeOrders}
+            menuItems={menuItems}
+            onRefresh={fetchActiveOrders}
+          />
+        )}
       </main>
     </CartProvider>
   );

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { OrderWithItems } from '@/types';
 import { useEventSource } from '@/hooks/useEventSource';
+import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
 import { formatCurrency, HOTEL_NAME, ORDER_FLOW, TAX_RATE } from '@/lib/utils';
 import { 
   ArrowLeft, 
@@ -463,6 +464,13 @@ export default function TrackOrderPage() {
           Add More Items / Return to Menu
         </button>
       </div>
+      {order && menuItems.length > 0 && (
+        <CustomerUnavailabilityModal
+          activeOrders={[order]}
+          menuItems={menuItems}
+          onRefresh={fetchOrder}
+        />
+      )}
     </div>
   );
 }

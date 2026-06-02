@@ -954,4 +954,81 @@ export async function updateOrderItems(req: Request, res: Response) {
   }
 }
 
+export async function replaceCustomerOrderItem(req: Request, res: Response) {
+  try {
+    const { orderId, itemId } = req.params;
+    const { menuItemId } = req.body;
+
+    if (!menuItemId) {
+      return res.status(400).json({ error: 'menuItemId is required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { bill: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'PAID') {
+      return res.status(400).json({ error: 'Cannot modify a completed order' });
+    }
+
+    if (order.bill) {
+      return res.status(400).json({ error: 'Bill already generated for this order' });
+    }
+
+    const orderItem = await prisma.orderItem.findUnique({
+      where: { id: itemId }
+    });
+
+    if (!orderItem || orderItem.orderId !== orderId) {
+      return res.status(404).json({ error: 'Order item not found in this order' });
+    }
+
+    const newMenuItem = await prisma.menuItem.findUnique({
+      where: { id: menuItemId }
+    });
+
+    if (!newMenuItem || !newMenuItem.available) {
+      return res.status(404).json({ error: 'Replacement menu item not found or unavailable' });
+    }
+
+    const updatedItem = await prisma.orderItem.update({
+      where: { id: itemId },
+      data: {
+        menuItemId: newMenuItem.id,
+        price: newMenuItem.price,
+        isUnavailable: false
+      },
+      include: { menuItem: true }
+    });
+
+    // Recalculate totals
+    const remainingItems = await prisma.orderItem.findMany({
+      where: { orderId }
+    });
+    const newTotal = remainingItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { total: newTotal }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId,
+      tableId: order.tableId,
+      status: order.status
+    });
+
+    return res.json(updatedItem);
+  } catch (error) {
+    console.error('Failed to replace customer order item:', error);
+    return res.status(500).json({ error: 'Failed to replace item' });
+  }
+}
+
+
 

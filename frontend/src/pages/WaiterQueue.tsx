@@ -13,7 +13,7 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 interface MenuItem { id: string; name: string; price: number; }
-interface OrderItem { id: string; quantity: number; price: number; menuItem: MenuItem; }
+interface OrderItem { id: string; quantity: number; price: number; menuItem: MenuItem; isUnavailable?: boolean; }
 interface TableInfo { id: string; tableNumber: number; }
 interface Order {
   id: string;
@@ -505,6 +505,7 @@ function TableGroup({
   const grandTotal = orders.reduce((s, o) => s + o.total, 0);
   const hasPending = orders.some(o => o.status === 'PENDING');
   const isPaid = bill?.paymentStatus === 'PAID';
+  const hasUnavailable = orders.some(o => o.items.some(i => i.isUnavailable));
 
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${
@@ -531,6 +532,11 @@ function TableGroup({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {hasUnavailable && (
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full animate-pulse flex items-center gap-0.5">
+              <AlertCircle size={10} className="text-red-500" /> OUT OF STOCK
+            </span>
+          )}
           {isPaid && (
             <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">PAID</span>
           )}
@@ -572,14 +578,17 @@ function TableGroup({
               {/* Clean Dish List (visible and clear on mobile) */}
               <div className="space-y-1.5 mt-2">
                 {order.items.map(item => (
-                  <div key={item.id} className="flex justify-between items-center bg-gray-50/70 border border-gray-100/50 rounded-xl px-3 py-2 text-xs">
+                  <div key={item.id} className={`flex justify-between items-center border rounded-xl px-3 py-2 text-xs ${item.isUnavailable ? 'bg-red-50 border-red-200 text-red-700 font-bold animate-pulse' : 'bg-gray-55 border-gray-150 text-gray-700'}`}>
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-bold text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-md shrink-0">
+                      <span className={`font-bold px-1.5 py-0.5 rounded-md shrink-0 border ${item.isUnavailable ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
                         {item.quantity}×
                       </span>
-                      <span className="text-gray-700 truncate">{item.menuItem.name}</span>
+                      <span className="truncate">{item.menuItem?.name || 'Unknown Item'}</span>
+                      {item.isUnavailable && (
+                        <span className="ml-1 bg-red-100 text-red-800 text-[8px] font-black px-1 rounded uppercase tracking-wider">Unavailable</span>
+                      )}
                     </div>
-                    <span className="font-semibold text-gray-900 ml-2">
+                    <span className="font-semibold ml-2">
                       {fmt(item.price * item.quantity)}
                     </span>
                   </div>
