@@ -24,7 +24,61 @@ export async function getWaiters(req: Request, res: Response) {
         // Never expose passwordHash to client
       }
     });
-    return res.json(waiters);
+
+    const waitersWithStats = await Promise.all(
+      waiters.map(async (waiter) => {
+        const tableIds = waiter.tables.map(t => t.id);
+        
+        if (tableIds.length === 0) {
+          return {
+            ...waiter,
+            ordersTaken: 0,
+            ordersCompleted: 0,
+            revenue: 0,
+          };
+        }
+
+        // Count of all orders taken (all statuses except CANCELLED)
+        const ordersTaken = await prisma.order.count({
+          where: {
+            tableId: { in: tableIds },
+            status: { not: 'CANCELLED' }
+          }
+        });
+
+        // Count of completed orders (status PAID)
+        const ordersCompleted = await prisma.order.count({
+          where: {
+            tableId: { in: tableIds },
+            status: 'PAID'
+          }
+        });
+
+        // Revenue generated from those completed orders (paid bills)
+        const paidBills = await prisma.bill.findMany({
+          where: {
+            order: {
+              tableId: { in: tableIds }
+            },
+            paymentStatus: 'PAID'
+          },
+          select: {
+            total: true
+          }
+        });
+
+        const revenue = paidBills.reduce((acc, bill) => acc + bill.total, 0);
+
+        return {
+          ...waiter,
+          ordersTaken,
+          ordersCompleted,
+          revenue,
+        };
+      })
+    );
+
+    return res.json(waitersWithStats);
   } catch (error) {
     console.error('Failed to get waiters:', error);
     return res.status(500).json({ error: 'Failed to fetch waiters' });
@@ -94,7 +148,12 @@ export async function createWaiter(req: Request, res: Response) {
       }
     });
 
-    return res.status(201).json(waiter);
+    return res.status(201).json({
+      ...waiter,
+      ordersTaken: 0,
+      ordersCompleted: 0,
+      revenue: 0
+    });
   } catch (error) {
     console.error('Failed to create waiter:', error);
     return res.status(500).json({ error: 'Failed to create waiter' });
@@ -187,7 +246,29 @@ export async function renameWaiter(req: AuthenticatedRequest, res: Response) {
       }
     });
 
-    return res.json(updated);
+    const tableIds = updated.tables.map(t => t.id);
+    let ordersTaken = 0;
+    let ordersCompleted = 0;
+    let revenue = 0;
+    if (tableIds.length > 0) {
+      ordersTaken = await prisma.order.count({
+        where: { tableId: { in: tableIds }, status: { not: 'CANCELLED' } }
+      });
+      ordersCompleted = await prisma.order.count({
+        where: { tableId: { in: tableIds }, status: 'PAID' }
+      });
+      const paidBills = await prisma.bill.findMany({
+        where: { order: { tableId: { in: tableIds } }, paymentStatus: 'PAID' },
+        select: { total: true }
+      });
+      revenue = paidBills.reduce((acc, bill) => acc + bill.total, 0);
+    }
+    return res.json({
+      ...updated,
+      ordersTaken,
+      ordersCompleted,
+      revenue
+    });
   } catch (error) {
     console.error('Failed to rename waiter:', error);
     return res.status(500).json({ error: 'Failed to rename waiter' });
@@ -229,7 +310,29 @@ export async function toggleWaiterAccess(req: AuthenticatedRequest, res: Respons
       }
     });
 
-    return res.json(updated);
+    const tableIds = updated.tables.map(t => t.id);
+    let ordersTaken = 0;
+    let ordersCompleted = 0;
+    let revenue = 0;
+    if (tableIds.length > 0) {
+      ordersTaken = await prisma.order.count({
+        where: { tableId: { in: tableIds }, status: { not: 'CANCELLED' } }
+      });
+      ordersCompleted = await prisma.order.count({
+        where: { tableId: { in: tableIds }, status: 'PAID' }
+      });
+      const paidBills = await prisma.bill.findMany({
+        where: { order: { tableId: { in: tableIds } }, paymentStatus: 'PAID' },
+        select: { total: true }
+      });
+      revenue = paidBills.reduce((acc, bill) => acc + bill.total, 0);
+    }
+    return res.json({
+      ...updated,
+      ordersTaken,
+      ordersCompleted,
+      revenue
+    });
   } catch (error) {
     console.error('Failed to toggle waiter access:', error);
     return res.status(500).json({ error: 'Failed to update waiter access' });

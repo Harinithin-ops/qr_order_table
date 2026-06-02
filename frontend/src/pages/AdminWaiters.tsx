@@ -4,7 +4,7 @@ import {
   Lock, Eye, EyeOff, KeyRound, RefreshCw, Pencil, ToggleLeft, ToggleRight,
   TableIcon
 } from 'lucide-react';
-import { HOTEL_NAME } from '@/lib/utils';
+import { HOTEL_NAME, formatCurrency } from '@/lib/utils';
 
 interface AssignedTable {
   id: string;
@@ -20,6 +20,9 @@ interface Waiter {
   isDisabled: boolean;
   createdAt: string;
   tables: AssignedTable[];
+  ordersTaken: number;
+  ordersCompleted: number;
+  revenue: number;
 }
 
 export default function AdminWaitersPage() {
@@ -349,6 +352,8 @@ export default function AdminWaitersPage() {
                 <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200 font-semibold">
                   <th className="px-6 py-4">Waiter Profile</th>
                   <th className="px-6 py-4">Assigned Tables</th>
+                  <th className="px-6 py-4 text-center">Orders (Taken / Completed)</th>
+                  <th className="px-6 py-4 text-right">Revenue Generated</th>
                   <th className="px-6 py-4">Registration Date</th>
                   <th className="px-6 py-4 text-center">Dashboard Access</th>
                   <th className="px-6 py-4 text-center">Password</th>
@@ -409,6 +414,25 @@ export default function AdminWaitersPage() {
                             ))}
                         </div>
                       )}
+                    </td>
+
+                    {/* Orders Taken / Completed */}
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100" title="Orders Taken">
+                          Taken: {waiter.ordersTaken ?? 0}
+                        </span>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100" title="Orders Completed">
+                          Done: {waiter.ordersCompleted ?? 0}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Revenue Generated */}
+                    <td className="px-6 py-4 text-right font-semibold">
+                      <span className="font-black text-emerald-600">
+                        {formatCurrency(waiter.revenue ?? 0)}
+                      </span>
                     </td>
 
                     {/* Registration Date */}
