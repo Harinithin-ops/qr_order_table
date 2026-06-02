@@ -286,7 +286,8 @@ export default function BillingHistoryPage() {
   const totalRevenue = bills.filter(b => b.paymentStatus === 'PAID').reduce((acc, curr) => acc + curr.total, 0);
 
   // Count records older than 2 days for the cleanup badge
-  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  const [mountTime] = useState(() => Date.now());
+  const twoDaysAgo = new Date(mountTime - 2 * 24 * 60 * 60 * 1000);
   const oldCount = bills.filter(b => new Date(b.createdAt) < twoDaysAgo).length;
 
   if (loading) {

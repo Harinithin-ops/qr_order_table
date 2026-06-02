@@ -11,7 +11,7 @@ import { CartProvider } from '@/hooks/useCart';
 import { useEventSource } from '@/hooks/useEventSource';
 import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
 import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
-import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2, ShoppingBag } from 'lucide-react';
+import { UtensilsCrossed, Search, X, User, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();

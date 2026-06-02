@@ -8,6 +8,7 @@ export function useEventSource(url: string, enabled = true) {
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     if (!mountedRef.current || !enabled) return;
@@ -68,12 +69,13 @@ export function useEventSource(url: string, enabled = true) {
       const delay = Math.min(1000 * Math.pow(2, Math.min(retryCountRef.current - 1, 5)), 30000);
 
       retryTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
+        if (mountedRef.current) connectRef.current();
       }, delay);
     };
-  }, [url, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [url, enabled]);
 
   useEffect(() => {
+    connectRef.current = connect;
     mountedRef.current = true;
     if (enabled) connect();
 

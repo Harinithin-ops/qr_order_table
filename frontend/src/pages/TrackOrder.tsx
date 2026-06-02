@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { OrderWithItems } from '@/types';
 import { useEventSource } from '@/hooks/useEventSource';
 import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
-import { formatCurrency, HOTEL_NAME, ORDER_FLOW, TAX_RATE } from '@/lib/utils';
+import { formatCurrency, ORDER_FLOW, TAX_RATE } from '@/lib/utils';
 import { 
   ArrowLeft, 
   Clock, 
@@ -122,8 +122,6 @@ export default function TrackOrderPage() {
   }
 
   const currentIdx = ORDER_FLOW.indexOf(order.status);
-  const isServed = order.status === 'SERVED';
-  const isPending = order.status === 'PENDING';
   const isPaid = order.status === 'PAID';
   const hasBill = !!order.bill || !!order.tableHasBill;
   
@@ -269,7 +267,7 @@ export default function TrackOrderPage() {
             <h3 className="text-xs font-extrabold text-gray-800 uppercase tracking-wider mb-5">Order Progress</h3>
             
             <div className="relative pl-6 space-y-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
-              {['PLACED', 'PREPARING', 'READY', 'SERVED'].map((step, idx) => {
+              {['PLACED', 'PREPARING', 'READY', 'SERVED'].map((step) => {
                 const stepIdx = ORDER_FLOW.indexOf(step);
                 const isPast = currentIdx >= stepIdx;
                 const isCurrent = currentIdx === stepIdx;

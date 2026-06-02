@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { OrderWithItems, MenuItem } from '@/types';
-import { AlertTriangle, Search, Check, Utensils, X } from 'lucide-react';
+import { AlertTriangle, Search, Check } from 'lucide-react';
 
 interface CustomerUnavailabilityModalProps {
   activeOrders: OrderWithItems[];
@@ -13,7 +13,6 @@ export function CustomerUnavailabilityModal({
   menuItems,
   onRefresh,
 }: CustomerUnavailabilityModalProps) {
-  const [replacingItemId, setReplacingItemId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');

@@ -25,7 +25,9 @@ export function WaiterAlerts({ lastEvent }: WaiterAlertsProps) {
       try {
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
         audio.play().catch(e => console.log('Audio autoplay blocked', e));
-      } catch (e) {}
+      } catch (e) {
+        console.error('Audio initialization failed:', e);
+      }
     } else if (lastEvent.type === 'WAITER_DISMISS') {
         const data = lastEvent.data as { tableId: string };
         setAlerts(prev => prev.filter(a => a.tableId !== data.tableId));

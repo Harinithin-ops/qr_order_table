@@ -36,7 +36,9 @@ export default function WaiterLayout() {
           activeOrders.filter((o: any) => ['SERVED', 'PENDING'].includes(o.status)).length
         );
       }
-    } catch {}
+    } catch (err) {
+      console.error('Failed to fetch active count:', err);
+    }
   };
 
   const fetchUserRole = async () => {
@@ -46,7 +48,9 @@ export default function WaiterLayout() {
         const data = await res.json();
         setWaiterUsername(data.username || 'Waiter');
       }
-    } catch {}
+    } catch (err) {
+      console.error('Failed to fetch user role:', err);
+    }
   };
 
   useEffect(() => {
@@ -65,7 +69,11 @@ export default function WaiterLayout() {
   }, [location.pathname]);
 
   const handleLogout = async () => {
-    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    try { 
+      await fetch('/api/auth/logout', { method: 'POST' }); 
+    } catch (err) {
+      console.error('Failed to logout:', err);
+    }
     navigate('/');
   };
 
