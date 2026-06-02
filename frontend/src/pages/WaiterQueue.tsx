@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useEventSource } from '@/hooks/useEventSource';
 import { WaiterAlerts } from '@/components/dashboard/WaiterAlerts';
+import { TAX_RATE } from '@/lib/utils';
 
 import {
   ClipboardList, ChevronDown, ChevronUp, Plus, Receipt,
@@ -193,7 +194,7 @@ function BillModal({
   const orderItems = currentBill ? currentBill.order.items : orders.flatMap(o => o.items);
   const isPaid = currentBill ? currentBill.paymentStatus === 'PAID' : false;
   const subtotal = currentBill ? currentBill.subtotal : orders.reduce((sum, o) => sum + o.total, 0);
-  const taxAmount = currentBill ? currentBill.taxAmount : subtotal * 0.02;
+  const taxAmount = currentBill ? currentBill.taxAmount : subtotal * TAX_RATE;
   const discount = currentBill ? currentBill.discount : 0;
   const total = currentBill ? currentBill.total : subtotal + taxAmount;
 
@@ -385,10 +386,12 @@ function BillModal({
                   <span>Subtotal</span>
                   <span className="font-semibold">{fmt(subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>GST (2%)</span>
-                  <span className="font-semibold">{fmt(taxAmount)}</span>
-                </div>
+                {taxAmount > 0 && (
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>GST ({TAX_RATE * 100}%)</span>
+                    <span className="font-semibold">{fmt(taxAmount)}</span>
+                  </div>
+                )}
                 {discount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
                     <span>Discount</span>

@@ -57,7 +57,7 @@ export function getStatusLabel(status: string): string {
 
 export const ORDER_FLOW: string[] = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'PENDING', 'PAID'];
 
-export const TAX_RATE = 0.02; // 2% GST
+export const TAX_RATE = 0.0; // No GST/tax
 export const HOTEL_NAME = 'Hotel kavitha';
 export const HOTEL_ADDRESS = 'No 36, PG Nest, Bus Stop, opp. to Vadavalli, V.N.R.Nagar, Vadavalli, Coimbatore, Tamil Nadu 641041';
 export const HOTEL_PHONE = '98430 47471';

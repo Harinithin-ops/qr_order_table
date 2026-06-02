@@ -233,10 +233,12 @@ export default function CheckoutPage() {
                 <span>Subtotal</span>
                 <span>{formatCurrency(bill.subtotal)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>GST ({bill.taxAmount > 0 && bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%)</span>
-                <span>{formatCurrency(bill.taxAmount)}</span>
-              </div>
+              {bill.taxAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>GST ({bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%)</span>
+                  <span>{formatCurrency(bill.taxAmount)}</span>
+                </div>
+              )}
               {bill.discount > 0 && (
                 <div className="flex justify-between text-green-600 font-bold">
                   <span>Discount</span>

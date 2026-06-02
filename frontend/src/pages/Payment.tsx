@@ -4,7 +4,7 @@ import { OrderWithItems, BillData } from '@/types';
 import { useEventSource } from '@/hooks/useEventSource';
 import { BillDocument } from '@/components/billing/BillPDF';
 import { PDFDownloadLink } from '@react-pdf/renderer';
-import { formatCurrency, HOTEL_UPI_ID, HOTEL_NAME, formatDate } from '@/lib/utils';
+import { formatCurrency, HOTEL_UPI_ID, HOTEL_NAME, formatDate, TAX_RATE } from '@/lib/utils';
 import { QRCodeSVG } from 'qrcode.react';
 import { 
   ArrowLeft, 
@@ -153,7 +153,7 @@ export default function CustomerPaymentPage() {
   const isAwaiting = bill?.paymentStatus === 'AWAITING_CONFIRMATION';
 
   // Calculate temporary totals if bill is not yet generated
-  const taxRate = 0.02; // Standard 2% GST
+  const taxRate = TAX_RATE; // Standard GST rate
   const subtotal = order.total;
   const taxAmount = subtotal * taxRate;
   const totalAmount = subtotal + taxAmount;
@@ -204,10 +204,12 @@ export default function CustomerPaymentPage() {
               <span>Subtotal</span>
               <span>{formatCurrency(hasBill ? bill.subtotal : subtotal)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>GST ({hasBill && bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : (taxRate * 100)}%)</span>
-              <span>{formatCurrency(hasBill ? bill.taxAmount : taxAmount)}</span>
-            </div>
+            {(hasBill ? bill.taxAmount : taxAmount) > 0 && (
+              <div className="flex justify-between">
+                <span>GST ({hasBill && bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : (taxRate * 100)}%)</span>
+                <span>{formatCurrency(hasBill ? bill.taxAmount : taxAmount)}</span>
+              </div>
+            )}
             {hasBill && bill.discount > 0 && (
               <div className="flex justify-between text-xs font-bold text-green-600">
                 <span>Discount</span>

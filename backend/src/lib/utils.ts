@@ -68,7 +68,7 @@ export async function generateBillNumber(): Promise<string> {
 
 
 
-export const TAX_RATE = 0.02; // 2% GST
+export const TAX_RATE = 0.0; // No GST/tax
 
 export interface TimingSlot {
   start: string;

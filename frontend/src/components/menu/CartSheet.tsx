@@ -194,10 +194,12 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems }
                   <span>Subtotal</span>
                   <span>{formatCurrency(subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-gray-600">
-                  <span>Taxes (2%)</span>
-                  <span>{formatCurrency(gst)}</span>
-                </div>
+                {TAX_RATE > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Taxes ({TAX_RATE * 100}%)</span>
+                    <span>{formatCurrency(gst)}</span>
+                  </div>
+                )}
                 <div className="pt-2 mt-2 border-t border-gray-200 flex justify-between font-bold text-lg text-gray-900">
                   <span>Total</span>
                   <span>{formatCurrency(total)}</span>

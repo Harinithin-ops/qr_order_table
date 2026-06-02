@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { OrderWithItems } from '@/types';
 import { useEventSource } from '@/hooks/useEventSource';
-import { formatCurrency, HOTEL_NAME, ORDER_FLOW } from '@/lib/utils';
+import { formatCurrency, HOTEL_NAME, ORDER_FLOW, TAX_RATE } from '@/lib/utils';
 import { 
   ArrowLeft, 
   Clock, 
@@ -114,7 +114,7 @@ export default function TrackOrderPage() {
   const hasBill = !!order.bill || !!order.tableHasBill;
   
   // Use bill amounts when available (more accurate); fall back to live computation
-  const taxRate = 0.02; // 2% GST
+  const taxRate = TAX_RATE; // GST rate
   const subtotal = order.bill?.subtotal ?? order.total;
   const taxAmount = order.bill?.taxAmount ?? (subtotal * taxRate);
   const totalAmount = order.bill?.total ?? (subtotal + taxAmount);
@@ -339,10 +339,12 @@ export default function TrackOrderPage() {
                 <span>Subtotal</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>GST ({taxRate * 100}%)</span>
-                <span>{formatCurrency(taxAmount)}</span>
-              </div>
+              {taxAmount > 0 && (
+                <div className="flex justify-between">
+                  <span>GST ({taxRate * 100}%)</span>
+                  <span>{formatCurrency(taxAmount)}</span>
+                </div>
+              )}
               
               <div className="flex justify-between text-sm font-extrabold text-gray-950 border-t border-dashed border-gray-200 pt-2 mt-2">
                 <span>{order.bill ? 'Total' : 'Estimated Total'}</span>

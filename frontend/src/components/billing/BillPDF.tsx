@@ -34,7 +34,7 @@ export function BillDocument({ bill }: BillPDFProps) {
         <View style={styles.header}>
           <Text style={styles.hotelName}>{HOTEL_NAME}</Text>
           <Text style={styles.address}>{HOTEL_ADDRESS}</Text>
-          <Text style={styles.address}>Phone: {HOTEL_PHONE} | GST: {HOTEL_GST}</Text>
+          <Text style={styles.address}>Phone: {HOTEL_PHONE}</Text>
         </View>
 
         <View style={styles.divider} />
@@ -74,10 +74,12 @@ export function BillDocument({ bill }: BillPDFProps) {
             <Text>Subtotal:</Text>
             <Text>{formatCurrency(bill.subtotal)}</Text>
           </View>
-          <View style={styles.totalRow}>
-            <Text>GST (2%):</Text>
-            <Text>{formatCurrency(bill.taxAmount)}</Text>
-          </View>
+          {bill.taxAmount > 0 && (
+            <View style={styles.totalRow}>
+              <Text>GST ({bill.subtotal > 0 ? ((bill.taxAmount / bill.subtotal) * 100).toFixed(0) : 2}%):</Text>
+              <Text>{formatCurrency(bill.taxAmount)}</Text>
+            </View>
+          )}
           {bill.discount > 0 && (
             <View style={styles.totalRow}>
               <Text>Discount:</Text>

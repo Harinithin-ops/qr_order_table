@@ -166,7 +166,7 @@ export default function BillMachinePage() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Custom print options
-  const [showGST, setShowGST] = useState(true);
+  const [showGST, setShowGST] = useState(false);
   const [showQR, setShowQR] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -606,18 +606,7 @@ export default function BillMachinePage() {
               </h3>
               
               <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <input 
-                    type="checkbox" 
-                    checked={showGST} 
-                    onChange={e => setShowGST(e.target.checked)}
-                    className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
-                  />
-                  <div>
-                    <span className="text-sm font-semibold text-gray-700">Include GST/Tax</span>
-                    <p className="text-[10px] text-gray-400">Shows GST (2%) breakdown</p>
-                  </div>
-                </label>
+
 
                 <label className="flex items-center gap-3 cursor-pointer select-none">
                   <input 
@@ -704,7 +693,7 @@ export default function BillMachinePage() {
                   <div className="text-base uppercase tracking-widest">{HOTEL_NAME}</div>
                   <div className="text-[9px] font-normal leading-normal">{HOTEL_ADDRESS}</div>
                   <div className="text-[9px] font-normal">Phone: {HOTEL_PHONE}</div>
-                  {showGST && <div className="text-[9px] font-normal">GSTIN: {HOTEL_GST}</div>}
+                  {showGST && selectedBill.taxAmount > 0 && <div className="text-[9px] font-normal">GSTIN: {HOTEL_GST}</div>}
                 </div>
 
                 {/* Dotted separator */}
@@ -754,7 +743,7 @@ export default function BillMachinePage() {
                     <span>{formatCurrency(selectedBill.subtotal)}</span>
                   </div>
                   
-                  {showGST && (
+                  {showGST && selectedBill.taxAmount > 0 && (
                     <div className="flex justify-between">
                       <span>GST ({selectedBill.subtotal > 0 ? ((selectedBill.taxAmount / selectedBill.subtotal) * 100).toFixed(0) : 2}%):</span>
                       <span>{formatCurrency(selectedBill.taxAmount)}</span>
