@@ -339,3 +339,151 @@ export async function toggleWaiterAccess(req: AuthenticatedRequest, res: Respons
   }
 }
 
+/** Admin-only: Retrieve detailed 10-day daily breakdown of orders and revenue per assigned table */
+export async function getWaiterPerformance(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const waiter = await prisma.waiter.findUnique({
+      where: { id },
+      include: {
+        tables: {
+          select: {
+            id: true,
+            tableNumber: true,
+            slug: true,
+          }
+        }
+      }
+    });
+
+    if (!waiter) {
+      return res.status(404).json({ error: 'Waiter not found' });
+    }
+
+    // Overall completed orders per table
+    const tableBreakdown = await Promise.all(
+      waiter.tables.map(async (table) => {
+        const completedOrders = await prisma.order.count({
+          where: {
+            tableId: table.id,
+            status: 'PAID'
+          }
+        });
+        return {
+          id: table.id,
+          tableNumber: table.tableNumber,
+          completedOrders
+        };
+      })
+    );
+    tableBreakdown.sort((a, b) => a.tableNumber - b.tableNumber);
+
+    // 10-day history (Today + 10 past days) in IST Asia/Kolkata
+    const now = new Date();
+    
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    });
+    
+    const parts = formatter.formatToParts(now);
+    const day = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+    const month = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+    const year = parseInt(parts.find(p => p.type === 'year')?.value || '2026', 10);
+
+    const dailyStats = [];
+    const tableIds = waiter.tables.map(t => t.id);
+
+    for (let i = 0; i <= 10; i++) {
+      // Midnight i days ago in IST is UTC + 5:30 offset
+      const startUtc = Date.UTC(year, month, day - i, 0, 0, 0) - (5.5 * 60 * 60 * 1000);
+      const endUtc = startUtc + (24 * 60 * 60 * 1000);
+
+      const startDate = new Date(startUtc);
+      const endDate = new Date(endUtc);
+
+      // Create localized date label in IST
+      const targetDate = new Date(startUtc);
+      const formattedDate = targetDate.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        weekday: i === 0 ? undefined : 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+      const dateLabel = i === 0 ? `Today, ${formattedDate}` : formattedDate;
+
+      const dayTables = [];
+      let dayTotalOrders = 0;
+      let dayTotalRevenue = 0;
+
+      if (tableIds.length > 0) {
+        for (const table of waiter.tables) {
+          const ordersCount = await prisma.order.count({
+            where: {
+              tableId: table.id,
+              status: 'PAID',
+              createdAt: {
+                gte: startDate,
+                lt: endDate
+              }
+            }
+          });
+
+          const bills = await prisma.bill.findMany({
+            where: {
+              order: {
+                tableId: table.id,
+                createdAt: {
+                  gte: startDate,
+                  lt: endDate
+                }
+              },
+              paymentStatus: 'PAID'
+            },
+            select: {
+              total: true
+            }
+          });
+
+          const revenue = bills.reduce((sum, b) => sum + b.total, 0);
+
+          if (ordersCount > 0 || revenue > 0) {
+            dayTables.push({
+              tableNumber: table.tableNumber,
+              ordersCount,
+              revenue
+            });
+            dayTotalOrders += ordersCount;
+            dayTotalRevenue += revenue;
+          }
+        }
+      }
+
+      dailyStats.push({
+        dateLabel,
+        totalOrders: dayTotalOrders,
+        totalRevenue: dayTotalRevenue,
+        tables: dayTables.sort((a, b) => a.tableNumber - b.tableNumber)
+      });
+    }
+
+    return res.json({
+      waiter: {
+        id: waiter.id,
+        username: waiter.username,
+        displayName: waiter.displayName
+      },
+      tableBreakdown,
+      dailyStats
+    });
+  } catch (error) {
+    console.error('Failed to get waiter performance:', error);
+    return res.status(500).json({ error: 'Failed to fetch waiter performance details' });
+  }
+}
+
+

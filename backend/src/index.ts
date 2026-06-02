@@ -38,7 +38,7 @@ import {
   markBillPaid
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
-import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess } from './controllers/waiters.controller.js';
+import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess, getWaiterPerformance } from './controllers/waiters.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -78,6 +78,7 @@ app.delete('/api/waiters/:id', authMiddleware, adminOnly, deleteWaiter);
 app.patch('/api/waiters/:id/password', authMiddleware, adminOnly, resetWaiterPassword);
 app.patch('/api/waiters/:id/name', authMiddleware, adminOnly, renameWaiter);
 app.patch('/api/waiters/:id/access', authMiddleware, adminOnly, toggleWaiterAccess);
+app.get('/api/waiters/:id/performance', authMiddleware, adminOnly, getWaiterPerformance);
 
 // Menu
 app.get('/api/menu', getMenu);

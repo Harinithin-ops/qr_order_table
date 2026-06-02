@@ -59,6 +59,16 @@ export default function AdminWaitersPage() {
 
   // Waiter Details Modal target state
   const [detailTarget, setDetailTarget] = useState<Waiter | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [performanceData, setPerformanceData] = useState<{
+    tableBreakdown: { id: string; tableNumber: number; completedOrders: number }[];
+    dailyStats: {
+      dateLabel: string;
+      totalOrders: number;
+      totalRevenue: number;
+      tables: { tableNumber: number; ordersCount: number; revenue: number }[];
+    }[];
+  } | null>(null);
 
   const fetchWaiters = async () => {
     try {
@@ -367,12 +377,29 @@ export default function AdminWaitersPage() {
                     {/* Profile */}
                     <td className="px-6 py-4">
                       <div 
-                        onClick={() => {
+                        onClick={async () => {
                           setDetailTarget(waiter);
                           setResetPassword('');
                           setResetError(null);
                           setResetSuccess(null);
                           setShowResetPassword(false);
+
+                          // Load detailed performance breakdown
+                          setPerformanceLoading(true);
+                          setPerformanceData(null);
+                          try {
+                            const res = await fetch(`/api/waiters/${waiter.id}/performance`, {
+                              credentials: 'include'
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setPerformanceData(data);
+                            }
+                          } catch (err) {
+                            console.error('Failed to load performance metrics:', err);
+                          } finally {
+                            setPerformanceLoading(false);
+                          }
                         }}
                         className="flex items-center gap-3 cursor-pointer group"
                         title="Click to view full waiter profile"
@@ -815,27 +842,38 @@ export default function AdminWaitersPage() {
             </div>
 
             <div className="space-y-6">
-              {/* Tables Assigned */}
+              {/* Tables Assigned & Overall Table Breakdown */}
               <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5 font-sans">
-                  <TableIcon size={14} className="text-amber-500" /> Tables Assigned
+                  <TableIcon size={14} className="text-amber-500" /> Tables Assigned & Overall Breakdown
                 </h4>
                 {detailTarget.tables.length === 0 ? (
                   <p className="text-sm text-gray-400 italic">No tables currently assigned to this waiter</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {detailTarget.tables
                       .slice()
                       .sort((a, b) => a.tableNumber - b.tableNumber)
-                      .map(t => (
-                        <span
-                          key={t.id}
-                          className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1 rounded-xl text-xs font-bold shadow-sm"
-                        >
-                          <TableIcon size={12} />
-                          Table {t.tableNumber}
-                        </span>
-                      ))}
+                      .map(t => {
+                        const tableStats = performanceData?.tableBreakdown.find(tb => tb.tableNumber === t.tableNumber);
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex items-center justify-between bg-amber-50/50 border border-amber-100 text-amber-900 p-2.5 rounded-xl text-xs shadow-sm font-sans"
+                          >
+                            <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
+                              <TableIcon size={12} /> Table {t.tableNumber}
+                            </span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                              {performanceLoading ? (
+                                '...'
+                              ) : (
+                                `${tableStats?.completedOrders ?? 0} done`
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -845,7 +883,7 @@ export default function AdminWaitersPage() {
                 {/* Orders Taken / Completed */}
                 <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100 flex flex-col justify-between">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 font-sans">
-                    <Activity size={14} className="text-blue-500" /> Orders Performance
+                    <Activity size={14} className="text-blue-500" /> Overall Performance
                   </h4>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -893,6 +931,60 @@ export default function AdminWaitersPage() {
                     hour12: true
                   }).format(new Date(detailTarget.createdAt))}
                 </div>
+              </div>
+
+              {/* Daily Activity Log (Today & Past 10 Days) */}
+              <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 font-sans">
+                  <Activity size={14} className="text-indigo-500" /> Daily Activity & Revenue Log (Past 11 Days)
+                </h4>
+
+                {performanceLoading ? (
+                  <div className="py-8 flex flex-col items-center justify-center gap-2">
+                    <Activity className="animate-spin text-red-600" size={20} />
+                    <span className="text-[10px] font-medium text-gray-400">Loading history...</span>
+                  </div>
+                ) : !performanceData ? (
+                  <p className="text-xs text-gray-400 italic text-center py-4">No activity history records retrieved</p>
+                ) : (
+                  <div className="space-y-3.5 max-h-56 overflow-y-auto pr-1 select-none scrollbar-thin">
+                    {performanceData.dailyStats.map((day, idx) => (
+                      <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm transition">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2">
+                          <span className="text-[11px] font-bold text-gray-800 font-sans">
+                            {day.dateLabel}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                              {day.totalOrders} Orders
+                            </span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              {formatCurrency(day.totalRevenue)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {day.tables.length === 0 ? (
+                          <span className="text-[10px] text-gray-400 italic block pl-1">No active tables serviced</span>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {day.tables.map((t, tIdx) => (
+                              <div key={tIdx} className="flex items-center justify-between text-[11px] bg-gray-50 px-2 py-1.5 rounded-lg border border-black/5 font-sans">
+                                <span className="font-semibold text-gray-700">
+                                  Table {t.tableNumber}
+                                </span>
+                                <div className="flex items-center gap-2.5">
+                                  <span className="text-gray-500 font-medium">{t.ordersCount} completed</span>
+                                  <span className="font-bold text-emerald-600">{formatCurrency(t.revenue)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>
