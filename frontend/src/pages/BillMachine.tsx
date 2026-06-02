@@ -407,6 +407,9 @@ export default function BillMachinePage() {
     <div className="p-4 md:p-8 animate-slide-up max-w-6xl mx-auto">
       {/* Stylesheet specifically for printing the thermal receipt roll */}
       <style>{`
+        #print-area {
+          font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+        }
         @media print {
           /* Hide everything on the page */
           body * {
@@ -428,6 +431,7 @@ export default function BillMachinePage() {
             background: white !important;
             color: black !important;
             box-shadow: none !important;
+            zoom: 0.9; /* Set scale to 90% by default for proper thermal printer alignment */
           }
           @page {
             size: auto;
@@ -693,7 +697,7 @@ export default function BillMachinePage() {
               {/* Receipt Body */}
               <div 
                 id="print-area" 
-                className="w-[80mm] min-h-[300px] bg-white border border-gray-300 shadow-md p-5 text-black font-mono text-[11px] leading-relaxed select-text"
+                className="w-[80mm] min-h-[300px] bg-white border border-gray-300 shadow-md p-5 text-black font-sans text-[11px] leading-relaxed select-text"
               >
                 {/* Header */}
                 <div className="text-center font-bold space-y-1 mb-4">
