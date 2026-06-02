@@ -231,6 +231,60 @@ const runStartersMigration = async () => {
 };
 runStartersMigration();
 
+// DDL & Resequence Migration: Automatically drops the unique constraint on billNumber and re-indexes all bills daily-resetting starting from 0001
+const runResequenceMigration = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    console.log('🔨 DDL: Dropping unique constraint/index on Bill.billNumber if exists...');
+    
+    // Drop unique constraint and index safely using raw SQL DDL
+    await prisma.$executeRawUnsafe('ALTER TABLE "Bill" DROP CONSTRAINT IF EXISTS "Bill_billNumber_key";').catch(() => {});
+    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "Bill_billNumber_key";').catch(() => {});
+    await prisma.$executeRawUnsafe('DROP INDEX IF EXISTS "public"."Bill_billNumber_key";').catch(() => {});
+    
+    console.log('✅ DDL: Unique constraint dropped.');
+
+    console.log('🔄 Data: Resequencing all existing bills date-wise starting from 0001...');
+    const bills = await prisma.bill.findMany({
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const groups: { [dateStr: string]: any[] } = {};
+    for (const bill of bills) {
+      const d = new Date(bill.createdAt);
+      const dateStr = d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      if (!groups[dateStr]) {
+        groups[dateStr] = [];
+      }
+      groups[dateStr].push(bill);
+    }
+
+    for (const [dateStr, dayBills] of Object.entries(groups)) {
+      for (let i = 0; i < dayBills.length; i++) {
+        const bill = dayBills[i];
+        const newBillNumber = String(i + 1).padStart(4, '0');
+        if (bill.billNumber !== newBillNumber) {
+          await prisma.bill.update({
+            where: { id: bill.id },
+            data: { billNumber: newBillNumber }
+          });
+          console.log(`  Updated Bill ID: ${bill.id.substring(0, 8)}... | ${bill.billNumber} ➡️ ${newBillNumber} for ${dateStr}`);
+        }
+      }
+    }
+    console.log('🎉 Data: All bills resequenced successfully!');
+  } catch (err) {
+    console.error('❌ Resequence migration failed:', err);
+  }
+};
+runResequenceMigration();
+
+
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`🚀 Express server running on port ${PORT}`);
