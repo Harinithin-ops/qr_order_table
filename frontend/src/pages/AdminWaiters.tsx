@@ -805,7 +805,7 @@ export default function AdminWaitersPage() {
       {/* ── Waiter Profile Details Modal ─────────────────────────────────────────── */}
       {detailTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden my-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-7 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden">
             
             {/* Banner top styling accent */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
