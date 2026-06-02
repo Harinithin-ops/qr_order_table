@@ -19,10 +19,8 @@ export function formatDate(date: string | Date): string {
 }
 
 export function generateBillNumber(): string {
-  const now = new Date();
-  const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `KH-${datePart}-${randomPart}`;
+  const randomPart = Math.floor(1000 + Math.random() * 9000);
+  return String(randomPart);
 }
 
 export function cn(...classes: (string | boolean | undefined | null)[]): string {

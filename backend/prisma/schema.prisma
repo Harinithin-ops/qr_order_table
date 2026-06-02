@@ -93,7 +93,7 @@ model Bill {
   paymentStatus    String   @default("PENDING")
   paymentMethod    String?
   paymentReference String?
-  billNumber       String   @unique
+  billNumber       String
   customItems      String   @default("[]")
   createdAt        DateTime @default(now())
 }
