@@ -14,8 +14,8 @@ async function main() {
   const branch = await prisma.branch.create({
     data: {
       name: 'Kavitha Hotel',
-      address: '123 Main Road, City Center',
-      phone: '+91 98765 43210',
+      address: 'No 36, PG Nest, Bus Stop, opp. to Vadavalli, V.N.R.Nagar, Vadavalli, Coimbatore, Tamil Nadu 641041',
+      phone: '98430 47471',
       gstNumber: '29ABCDE1234F1Z5',
     },
   });

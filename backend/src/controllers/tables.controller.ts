@@ -121,8 +121,8 @@ export async function createTable(req: Request, res: Response) {
       branch = await prisma.branch.create({
         data: {
           name: 'Main Branch',
-          address: '123 Main Road',
-          phone: '9876543210'
+          address: 'No 36, PG Nest, Bus Stop, opp. to Vadavalli, V.N.R.Nagar, Vadavalli, Coimbatore, Tamil Nadu 641041',
+          phone: '98430 47471'
         }
       });
     }
