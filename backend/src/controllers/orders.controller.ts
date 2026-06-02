@@ -993,9 +993,22 @@ export async function getActiveOrdersByCustomer(req: Request, res: Response) {
       return res.status(400).json({ error: 'tableId and customerId are required' });
     }
 
+    const table = await prisma.table.findFirst({
+      where: {
+        OR: [
+          { id: String(tableId) },
+          { slug: String(tableId) }
+        ]
+      }
+    });
+
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
     const orders = await prisma.order.findMany({
       where: {
-        tableId: String(tableId),
+        tableId: table.id,
         customerId: String(customerId),
         status: {
           notIn: ['PAID', 'CANCELLED']

@@ -233,8 +233,28 @@ export default function MenuPage() {
                   }));
                   setCustomerPhone(data.phone);
                   setCustomerId(data.customerId);
-                  setOrderIds([]);
-                  sessionStorage.removeItem(`kh_orders_${tableId}`);
+
+                  // Fetch and restore active orders for this customer to state/storage
+                  try {
+                    const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.customerId}`);
+                    if (ordersRes.ok) {
+                      const activeOrdersData = await ordersRes.json();
+                      const dbOrderIds = activeOrdersData.map((o: any) => o.id);
+                      setOrderIds(dbOrderIds);
+                      if (dbOrderIds.length > 0) {
+                        sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(dbOrderIds));
+                      } else {
+                        sessionStorage.removeItem(`kh_orders_${tableId}`);
+                      }
+                    } else {
+                      setOrderIds([]);
+                      sessionStorage.removeItem(`kh_orders_${tableId}`);
+                    }
+                  } catch (err) {
+                    console.error('Failed to restore active orders on login:', err);
+                    setOrderIds([]);
+                    sessionStorage.removeItem(`kh_orders_${tableId}`);
+                  }
                 } else {
                   const errData = await res.json().catch(() => ({}));
                   alert(errData.error || 'Failed to establish session. Please try again.');
