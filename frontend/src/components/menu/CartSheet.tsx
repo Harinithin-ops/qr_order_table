@@ -10,9 +10,10 @@ interface Props {
   onClose: () => void;
   onOrderPlaced: (orderId: string) => void;
   menuItems: MenuItemWithCategory[];
+  customerId: string | null;
 }
 
-export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems }: Props) {
+export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems, customerId }: Props) {
   const { items, updateQuantity, getTotalPrice, clearCart } = useCart();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -46,8 +47,18 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems }
         body: JSON.stringify({
           tableId,
           items,
+          customerId: customerId || undefined,
           notes: (() => {
-            const customerName = localStorage.getItem('kh_customer_name');
+            const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
+            let customerName = null;
+            if (rawSession) {
+              try {
+                customerName = JSON.parse(rawSession).name;
+              } catch {}
+            }
+            if (!customerName) {
+              customerName = localStorage.getItem('kh_customer_name');
+            }
             if (customerName) {
               return `Name: ${customerName}${notes ? ` | Notes: ${notes}` : ''}`;
             }

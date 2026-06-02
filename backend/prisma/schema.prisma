@@ -63,6 +63,7 @@ model Order {
   status    String      @default("PLACED")
   total     Float
   notes     String?
+  customerId String?
   items     OrderItem[]
   bill      Bill?
   createdAt DateTime    @default(now())
@@ -108,4 +109,14 @@ model Waiter {
   isDisabled   Boolean  @default(false)
   tables       Table[]
   createdAt    DateTime @default(now())
+}
+
+model CustomerSession {
+  id        String   @id @default(uuid())
+  name      String
+  tableId   String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([tableId])
 }

@@ -49,7 +49,7 @@ async function syncOrderAndBillTotals(orderId: string, tx?: any) {
 
 export async function createOrder(req: Request, res: Response) {
   try {
-    const { tableId, items, notes } = req.body;
+    const { tableId, items, notes, customerId } = req.body;
 
     if (!tableId || !items || items.length === 0) {
       return res.status(400).json({ error: 'Invalid request data' });
@@ -88,16 +88,13 @@ export async function createOrder(req: Request, res: Response) {
       }
     }
 
-    // Server-Side Same-Name Order Merging
-    // Check if the new order specifies a customer name
-    const match = notes ? notes.match(/^Name:\s*([^|]+)/) : null;
-    const customerName = match ? match[1].trim() : null;
-
-    if (customerName) {
-      // Find active orders at this table (status not PAID or CANCELLED)
-      const activeOrders = await prisma.order.findMany({
+    // Server-Side same customer-session order merging
+    let existingOrder = null;
+    if (customerId) {
+      existingOrder = await prisma.order.findFirst({
         where: {
           tableId: table.id,
+          customerId,
           status: {
             notIn: ['PAID', 'CANCELLED']
           }
@@ -106,109 +103,131 @@ export async function createOrder(req: Request, res: Response) {
           items: true
         }
       });
+    } else {
+      // Fallback same-name matching (case-insensitive) for waiters or legacy endpoints
+      const match = notes ? notes.match(/^Name:\s*([^|]+)/) : null;
+      const customerName = match ? match[1].trim() : null;
 
-      // Find an order where the notes start with "Name: [customerName]" (case-insensitive)
-      const existingOrder = activeOrders.find(o => {
-        const existingNotes = o.notes || '';
-        const m = existingNotes.match(/^Name:\s*([^|]+)/);
-        if (m) {
-          return m[1].trim().toLowerCase() === customerName.toLowerCase();
+      if (customerName) {
+        const activeOrders = await prisma.order.findMany({
+          where: {
+            tableId: table.id,
+            status: {
+              notIn: ['PAID', 'CANCELLED']
+            }
+          },
+          include: {
+            items: true
+          }
+        });
+
+        existingOrder = activeOrders.find(o => {
+          const existingNotes = o.notes || '';
+          const m = existingNotes.match(/^Name:\s*([^|]+)/);
+          if (m) {
+            return m[1].trim().toLowerCase() === customerName.toLowerCase();
+          }
+          return false;
+        });
+      }
+    }
+
+    if (existingOrder) {
+      // Perform order merge inside a transaction
+      const mergedOrder = await prisma.$transaction(async (tx) => {
+        // 1. Process items
+        for (const item of items) {
+          // Find duplicate item in existing order with the same special instructions
+          const existingItem = existingOrder.items.find(
+            ei => ei.menuItemId === item.menuItemId && 
+                  (ei.specialInstructions || '').trim().toLowerCase() === (item.specialInstructions || '').trim().toLowerCase()
+          );
+
+          if (existingItem) {
+            // Increment quantity of existing item
+            await tx.orderItem.update({
+              where: { id: existingItem.id },
+              data: {
+                quantity: existingItem.quantity + item.quantity
+              }
+            });
+          } else {
+            // Add new item to the existing order
+            await tx.orderItem.create({
+              data: {
+                orderId: existingOrder.id,
+                menuItemId: item.menuItemId,
+                quantity: item.quantity,
+                price: item.price,
+                specialInstructions: item.specialInstructions
+              }
+            });
+          }
         }
-        return false;
+
+        // 2. Concatenate notes suffix elegantly
+        let mergedNotes = existingOrder.notes || '';
+        const newNotesMatch = notes ? notes.match(/\|\s*Notes:\s*(.+)$/) : null;
+        const newNotesContent = newNotesMatch ? newNotesMatch[1].trim() : null;
+
+        if (newNotesContent) {
+          const existingNotesMatch = (existingOrder.notes || '').match(/\|\s*Notes:\s*(.+)$/);
+          const existingNotesContent = existingNotesMatch ? existingNotesMatch[1].trim() : null;
+
+          if (existingNotesContent) {
+            if (!existingNotesContent.toLowerCase().includes(newNotesContent.toLowerCase())) {
+              // Extract name prefix
+              const nameMatch = existingOrder.notes?.match(/^Name:\s*([^|]+)/);
+              const nameValue = nameMatch ? nameMatch[1].trim() : 'Guest';
+              mergedNotes = `Name: ${nameValue} | Notes: ${existingNotesContent}; ${newNotesContent}`;
+            }
+          } else {
+            const nameMatch = existingOrder.notes?.match(/^Name:\s*([^|]+)/);
+            const nameValue = nameMatch ? nameMatch[1].trim() : 'Guest';
+            mergedNotes = `Name: ${nameValue} | Notes: ${newNotesContent}`;
+          }
+        }
+
+        // 3. Recalculate total price
+        const updatedItems = await tx.orderItem.findMany({
+          where: { orderId: existingOrder.id }
+        });
+        const newTotal = updatedItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+
+        // 4. Update the order with the new total, merged notes, and reset status if needed
+        let newStatus = existingOrder.status;
+        if (['READY', 'SERVED'].includes(existingOrder.status)) {
+          newStatus = 'PLACED';
+        }
+
+        const updated = await tx.order.update({
+          where: { id: existingOrder.id },
+          data: {
+            total: newTotal,
+            notes: mergedNotes,
+            status: newStatus
+          },
+          include: {
+            table: true,
+            items: {
+              include: {
+                menuItem: true
+              }
+            }
+          }
+        });
+
+        return updated;
       });
 
-      if (existingOrder) {
-        // Perform order merge inside a transaction
-        const mergedOrder = await prisma.$transaction(async (tx) => {
-          // 1. Process items
-          for (const item of items) {
-            // Find duplicate item in existing order with the same special instructions
-            const existingItem = existingOrder.items.find(
-              ei => ei.menuItemId === item.menuItemId && 
-                    (ei.specialInstructions || '').trim().toLowerCase() === (item.specialInstructions || '').trim().toLowerCase()
-            );
+      // Emit update event to sync dashboard
+      eventEmitter.emit('ORDER_UPDATE', { 
+        orderId: mergedOrder.id, 
+        status: mergedOrder.status, 
+        tableId: mergedOrder.tableId 
+      });
 
-            if (existingItem) {
-              // Increment quantity of existing item
-              await tx.orderItem.update({
-                where: { id: existingItem.id },
-                data: {
-                  quantity: existingItem.quantity + item.quantity
-                }
-              });
-            } else {
-              // Add new item to the existing order
-              await tx.orderItem.create({
-                data: {
-                  orderId: existingOrder.id,
-                  menuItemId: item.menuItemId,
-                  quantity: item.quantity,
-                  price: item.price,
-                  specialInstructions: item.specialInstructions
-                }
-              });
-            }
-          }
-
-          // 2. Concatenate notes suffix elegantly
-          let mergedNotes = existingOrder.notes || '';
-          const newNotesMatch = notes ? notes.match(/\|\s*Notes:\s*(.+)$/) : null;
-          const newNotesContent = newNotesMatch ? newNotesMatch[1].trim() : null;
-
-          if (newNotesContent) {
-            const existingNotesMatch = (existingOrder.notes || '').match(/\|\s*Notes:\s*(.+)$/);
-            const existingNotesContent = existingNotesMatch ? existingNotesMatch[1].trim() : null;
-
-            if (existingNotesContent) {
-              if (!existingNotesContent.toLowerCase().includes(newNotesContent.toLowerCase())) {
-                mergedNotes = `Name: ${customerName} | Notes: ${existingNotesContent}; ${newNotesContent}`;
-              }
-            } else {
-              mergedNotes = `Name: ${customerName} | Notes: ${newNotesContent}`;
-            }
-          }
-
-          // 3. Recalculate total price
-          const updatedItems = await tx.orderItem.findMany({
-            where: { orderId: existingOrder.id }
-          });
-          const newTotal = updatedItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-
-          // 4. Update the order with the new total, merged notes, and reset status if needed
-          let newStatus = existingOrder.status;
-          if (['READY', 'SERVED'].includes(existingOrder.status)) {
-            newStatus = 'PLACED';
-          }
-
-          const updated = await tx.order.update({
-            where: { id: existingOrder.id },
-            data: {
-              total: newTotal,
-              notes: mergedNotes,
-              status: newStatus
-            },
-            include: {
-              table: true,
-              items: {
-                include: {
-                  menuItem: true
-                }
-              }
-            }
-          });
-
-          return updated;
-        });
-
-        // Emit update event to sync dashboard
-        eventEmitter.emit('ORDER_UPDATE', { 
-          orderId: mergedOrder.id, 
-          status: mergedOrder.status, 
-          tableId: mergedOrder.tableId 
-        });
-
-        return res.status(200).json(mergedOrder);
-      }
+      return res.status(200).json(mergedOrder);
     }
 
     const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
@@ -218,6 +237,7 @@ export async function createOrder(req: Request, res: Response) {
         tableId: table.id,
         total,
         notes,
+        customerId: customerId || null,
         items: {
           create: items.map((item: any) => ({
             menuItemId: item.menuItemId,
@@ -998,6 +1018,43 @@ export async function replaceCustomerOrderItem(req: Request, res: Response) {
   } catch (error) {
     console.error('Failed to replace customer order item:', error);
     return res.status(500).json({ error: 'Failed to replace item' });
+  }
+}
+
+export async function getActiveOrdersByCustomer(req: Request, res: Response) {
+  try {
+    const { tableId, customerId } = req.query;
+
+    if (!tableId || !customerId) {
+      return res.status(400).json({ error: 'tableId and customerId are required' });
+    }
+
+    const orders = await prisma.order.findMany({
+      where: {
+        tableId: String(tableId),
+        customerId: String(customerId),
+        status: {
+          notIn: ['PAID', 'CANCELLED']
+        }
+      },
+      include: {
+        table: true,
+        items: {
+          include: {
+            menuItem: true
+          }
+        },
+        bill: true
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    return res.json(orders);
+  } catch (error) {
+    console.error('Failed to get active customer orders:', error);
+    return res.status(500).json({ error: 'Failed to fetch customer orders' });
   }
 }
 

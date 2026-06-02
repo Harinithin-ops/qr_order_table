@@ -21,44 +21,87 @@ export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [initializingSession, setInitializingSession] = useState(true);
   // Track MULTIPLE concurrent orders (e.g. first round + second round)
   const [orderIds, setOrderIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [inputName, setInputName] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   const [activeOrders, setActiveOrders] = useState<OrderWithItems[]>([]);
   const { lastEvent } = useEventSource('/api/events');
 
-  useEffect(() => {
-    const savedName = localStorage.getItem('kh_customer_name');
-    if (savedName) {
-      setCustomerName(savedName);
-    }
-  }, []);
-
   // Ref to scroll the item list back to top on category switch
   const itemListRef = useRef<HTMLDivElement>(null);
 
+  // Initialize and verify session on mount or tableId change
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Support array of order IDs stored as JSON for multiple concurrent orders
-      const raw = sessionStorage.getItem(`kh_orders_${tableId}`);
-      if (raw) {
+    const initializeSession = async () => {
+      setInitializingSession(true);
+      const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
+      if (rawSession) {
         try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setOrderIds(parsed);
-        } catch {
-          // Legacy single-id fallback
-          setOrderIds([raw]);
-        }
-      } else {
-        // Also try legacy single-order key for backward compat
-        const legacySingle = sessionStorage.getItem(`kh_order_${tableId}`);
-        if (legacySingle) setOrderIds([legacySingle]);
-      }
-    }
+          const parsed = JSON.parse(rawSession);
+          if (parsed && parsed.customerId && parsed.name) {
+            // Verify session on the backend (extends session by 2 hours if valid)
+            const res = await fetch('/api/sessions/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ customerId: parsed.customerId, tableId })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.valid && data.session) {
+                setCustomerId(data.session.customerId);
+                setCustomerName(data.session.name);
 
+                // Fetch active orders for this customer to restore tracking on tab reopen/refresh
+                const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.session.customerId}`);
+                if (ordersRes.ok) {
+                  const activeOrdersData = await ordersRes.json();
+                  const dbOrderIds = activeOrdersData.map((o: any) => o.id);
+                  
+                  // Merge with any current sessionStorage IDs
+                  let localOrderIds: string[] = [];
+                  const rawLocal = sessionStorage.getItem(`kh_orders_${tableId}`);
+                  if (rawLocal) {
+                    try {
+                      const parsedLocal = JSON.parse(rawLocal);
+                      if (Array.isArray(parsedLocal)) localOrderIds = parsedLocal;
+                    } catch {}
+                  }
+                  
+                  const combined = Array.from(new Set([...dbOrderIds, ...localOrderIds]));
+                  setOrderIds(combined);
+                  if (combined.length > 0) {
+                    sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(combined));
+                  }
+                  setInitializingSession(false);
+                  return;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Failed to initialize customer session:', err);
+        }
+      }
+
+      // If session is missing, expired, or invalid, reset
+      localStorage.removeItem(`kh_customer_session_${tableId}`);
+      setCustomerId(null);
+      setCustomerName(null);
+      setOrderIds([]);
+      sessionStorage.removeItem(`kh_orders_${tableId}`);
+      setInitializingSession(false);
+    };
+
+    initializeSession();
+  }, [tableId]);
+
+  // Fetch Menu (independent of tableId and session)
+  useEffect(() => {
     const fetchMenu = async () => {
       try {
         const res = await fetch('/api/menu');
@@ -89,7 +132,8 @@ export default function MenuPage() {
     return () => {
       clearInterval(interval);
     };
-  }, [tableId]);
+  }, []);
+
   const fetchActiveOrders = useCallback(async () => {
     if (orderIds.length === 0) {
       setActiveOrders([]);
@@ -149,7 +193,7 @@ export default function MenuPage() {
   const activeCategory_ = categories.find((c) => c.id === activeCategory);
   const otherCategories = categories.filter((c) => c.id !== activeCategory);
 
-  if (loading) {
+  if (loading || initializingSession) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <UtensilsCrossed size={40} className="text-green-600 animate-pulse mb-4" />
@@ -158,7 +202,7 @@ export default function MenuPage() {
     );
   }
 
-  if (!customerName && !loading) {
+  if (!customerName) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4 max-w-md mx-auto shadow-2xl relative overflow-hidden">
         {/* Decorative background blur blobs */}
@@ -171,11 +215,31 @@ export default function MenuPage() {
           <h2 className="font-serif font-bold text-2xl text-gray-900 mb-1">Welcome to {HOTEL_NAME}</h2>
           <p className="text-xs text-gray-500 mb-6">Start ordering at Table <span className="font-bold text-green-600">{tableId.replace('table-', '')}</span></p>
 
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
             if (inputName.trim()) {
-              localStorage.setItem('kh_customer_name', inputName.trim());
-              setCustomerName(inputName.trim());
+              try {
+                const res = await fetch('/api/sessions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: inputName.trim(), tableId })
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify({
+                    customerId: data.customerId,
+                    name: data.name
+                  }));
+                  setCustomerName(data.name);
+                  setCustomerId(data.customerId);
+                  setOrderIds([]);
+                  sessionStorage.removeItem(`kh_orders_${tableId}`);
+                } else {
+                  alert('Failed to establish session. Please try again.');
+                }
+              } catch (err) {
+                alert('Network error. Please try again.');
+              }
             }
           }} className="space-y-4 text-left">
             <div>
@@ -227,8 +291,17 @@ export default function MenuPage() {
                   onClick={() => {
                     const newName = prompt('Update your name:', customerName);
                     if (newName && newName.trim()) {
-                      localStorage.setItem('kh_customer_name', newName.trim());
-                      setCustomerName(newName.trim());
+                      const trimmed = newName.trim();
+                      const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
+                      if (rawSession) {
+                        try {
+                          const parsed = JSON.parse(rawSession);
+                          parsed.name = trimmed;
+                          localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify(parsed));
+                        } catch {}
+                      }
+                      localStorage.setItem('kh_customer_name', trimmed);
+                      setCustomerName(trimmed);
                     }
                   }}
                   className="p-0.5 rounded text-gray-400 hover:text-red-500 transition"
@@ -372,6 +445,7 @@ export default function MenuPage() {
           onClose={() => setIsCartOpen(false)}
           onOrderPlaced={handleOrderPlaced}
           menuItems={menuItems}
+          customerId={customerId}
         />
         {activeOrders.length > 0 && menuItems.length > 0 && (
           <CustomerUnavailabilityModal

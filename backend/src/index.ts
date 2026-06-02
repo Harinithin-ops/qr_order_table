@@ -24,7 +24,8 @@ import {
   replaceOrderItem,
   addItemToOrder,
   updateOrderItems,
-  replaceCustomerOrderItem
+  replaceCustomerOrderItem,
+  getActiveOrdersByCustomer
 } from './controllers/orders.controller.js';
 import {
   createBill,
@@ -44,6 +45,7 @@ import {
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess, getWaiterPerformance } from './controllers/waiters.controller.js';
+import { createSession, verifySession } from './controllers/sessions.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -100,9 +102,14 @@ app.post('/api/tables/:id/call-waiter', callWaiter);
 app.delete('/api/tables/:id/call-waiter', dismissWaiter);
 app.get('/api/qr/:id', getTableQR);
 
+// Sessions
+app.post('/api/sessions', createSession);
+app.post('/api/sessions/verify', verifySession);
+
 // Orders
 app.post('/api/orders', createOrder);
 app.get('/api/orders', authMiddleware, getOrders);
+app.get('/api/orders/active', getActiveOrdersByCustomer);
 app.get('/api/orders/:id', getOrderById);
 app.get('/api/orders/:id/status', getOrderStatus);
 app.patch('/api/orders/:id/status', authMiddleware, updateOrderStatus);
