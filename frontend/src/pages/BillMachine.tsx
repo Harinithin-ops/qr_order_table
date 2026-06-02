@@ -164,6 +164,7 @@ export default function BillMachinePage() {
   const [selectedBill, setSelectedBill] = useState<(BillData & { order: OrderWithItems }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'today' | 'past'>('today');
   
   // Custom print options
   const [showGST, setShowGST] = useState(false);
@@ -354,6 +355,17 @@ export default function BillMachinePage() {
     };
   }, [usbDevice, isUsbSupported]);
 
+  const isToday = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() &&
+           d.getMonth() === now.getMonth() &&
+           d.getDate() === now.getDate();
+  };
+
+  const todayBills = bills.filter(b => isToday(b.createdAt));
+  const pastBills = bills.filter(b => !isToday(b.createdAt));
+
   useEffect(() => {
     const fetchBills = async () => {
       try {
@@ -361,9 +373,21 @@ export default function BillMachinePage() {
         if (res.ok) {
           const data = await res.json();
           setBills(data);
-          if (data.length > 0) {
-            // Select the most recent bill by default
+          
+          const today = data.filter((b: any) => {
+            const d = new Date(b.createdAt);
+            const now = new Date();
+            return d.getFullYear() === now.getFullYear() &&
+                   d.getMonth() === now.getMonth() &&
+                   d.getDate() === now.getDate();
+          });
+          
+          if (today.length > 0) {
+            setSelectedBill(today[0]);
+            setActiveTab('today');
+          } else if (data.length > 0) {
             setSelectedBill(data[0]);
+            setActiveTab('past');
           }
         }
       } catch (err) {
@@ -374,6 +398,16 @@ export default function BillMachinePage() {
     };
     fetchBills();
   }, []);
+
+  const handleTabChange = (tab: 'today' | 'past') => {
+    setActiveTab(tab);
+    const targetBills = tab === 'today' ? todayBills : pastBills;
+    if (targetBills.length > 0) {
+      setSelectedBill(targetBills[0]);
+    } else {
+      setSelectedBill(null);
+    }
+  };
 
   const handlePrint = () => {
     window.print();
@@ -390,7 +424,9 @@ export default function BillMachinePage() {
     }
   };
 
-  const filteredBills = bills.filter(b => 
+  const activeTabBills = activeTab === 'today' ? todayBills : pastBills;
+
+  const filteredBills = activeTabBills.filter(b => 
     b.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     b.order.table.tableNumber.toString().includes(searchTerm)
   );
@@ -546,6 +582,41 @@ export default function BillMachinePage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Tab switch navigation */}
+          <div className="flex border-b border-gray-200 bg-gray-50/30 shrink-0">
+            <button
+              onClick={() => handleTabChange('today')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 border-b-2 font-semibold text-xs transition-all cursor-pointer ${
+                activeTab === 'today'
+                  ? 'border-red-600 text-red-600 font-bold'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>Today's Orders</span>
+              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                activeTab === 'today' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {todayBills.length}
+              </span>
+            </button>
+            
+            <button
+              onClick={() => handleTabChange('past')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 border-b-2 font-semibold text-xs transition-all cursor-pointer ${
+                activeTab === 'past'
+                  ? 'border-red-600 text-red-600 font-bold'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>Past Bills</span>
+              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                activeTab === 'past' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {pastBills.length}
+              </span>
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-gray-150">
