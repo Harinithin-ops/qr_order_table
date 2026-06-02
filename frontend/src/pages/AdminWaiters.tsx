@@ -805,50 +805,50 @@ export default function AdminWaitersPage() {
       {/* ── Waiter Profile Details Modal ─────────────────────────────────────────── */}
       {detailTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-gray-100 animate-slide-up relative overflow-hidden my-auto">
             
             {/* Banner top styling accent */}
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
             
-            <div className="flex justify-between items-start mb-6 pt-2">
-              <div className="flex items-center gap-4">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-xl uppercase shadow-md border border-black/5 ${getAvatarBgColor(detailTarget.username)}`}>
+            <div className="flex justify-between items-start mb-4 pt-1">
+              <div className="flex items-center gap-3">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg uppercase shadow-md border border-black/5 ${getAvatarBgColor(detailTarget.username)}`}>
                   {(detailTarget.displayName || detailTarget.username).slice(0, 2)}
                 </div>
                 <div>
-                  <h3 className="font-bold text-2xl text-gray-900 font-serif leading-tight">
+                  <h3 className="font-bold text-xl text-gray-900 font-serif leading-tight">
                     {detailTarget.displayName || detailTarget.username}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-400 font-semibold tracking-wide">
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] text-gray-400 font-semibold tracking-wide">
                       @{detailTarget.username}
                     </span>
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                       detailTarget.isDisabled
                         ? 'bg-red-50 border-red-200 text-red-600'
                         : 'bg-green-50 border-green-200 text-green-700'
                     }`}>
-                      {detailTarget.isDisabled ? 'Access Disabled' : 'Access Enabled'}
+                      {detailTarget.isDisabled ? 'Disabled' : 'Active'}
                     </span>
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setDetailTarget(null)}
-                className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition"
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Tables Assigned & Overall Table Breakdown */}
-              <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5 font-sans">
-                  <TableIcon size={14} className="text-amber-500" /> Tables Assigned & Overall Breakdown
+              <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100">
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 font-sans">
+                  <TableIcon size={12} className="text-amber-500" /> Tables Assigned & Overall Breakdown
                 </h4>
                 {detailTarget.tables.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">No tables currently assigned to this waiter</p>
+                  <p className="text-xs text-gray-400 italic">No tables currently assigned to this waiter</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {detailTarget.tables
@@ -859,12 +859,12 @@ export default function AdminWaitersPage() {
                         return (
                           <div
                             key={t.id}
-                            className="flex items-center justify-between bg-amber-50/50 border border-amber-100 text-amber-900 p-2.5 rounded-xl text-xs shadow-sm font-sans"
+                            className="flex items-center justify-between bg-amber-50/50 border border-amber-100 text-amber-900 p-2 rounded-xl text-[11px] shadow-sm font-sans"
                           >
                             <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
-                              <TableIcon size={12} /> Table {t.tableNumber}
+                              <TableIcon size={10} /> Table {t.tableNumber}
                             </span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">
                               {performanceLoading ? (
                                 '...'
                               ) : (
@@ -879,22 +879,22 @@ export default function AdminWaitersPage() {
               </div>
 
               {/* Stats & Revenue Row */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 {/* Orders Taken / Completed */}
-                <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100 flex flex-col justify-between">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 font-sans">
-                    <Activity size={14} className="text-blue-500" /> Overall Performance
+                <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100 flex flex-col justify-between">
+                  <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 font-sans">
+                    <Activity size={12} className="text-blue-500" /> Overall Performance
                   </h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-500">Orders Taken</span>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100 shadow-sm">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Orders Taken</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 shadow-sm">
                         {detailTarget.ordersTaken ?? 0}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-500">Orders Completed</span>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-100 shadow-sm">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Completed</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-100 shadow-sm">
                         {detailTarget.ordersCompleted ?? 0}
                       </span>
                     </div>
@@ -902,13 +902,13 @@ export default function AdminWaitersPage() {
                 </div>
 
                 {/* Revenue Generated */}
-                <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100 flex flex-col justify-between">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 font-sans">
+                <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100 flex flex-col justify-between">
+                  <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1.5 font-sans">
                     <span className="text-emerald-500 font-bold">₹</span> Revenue Generated
                   </h4>
                   <div className="mt-auto">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase block tracking-wider leading-none">Settled Earnings</span>
-                    <span className="font-black text-2xl text-emerald-600 block mt-1 leading-none">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block tracking-wider leading-none">Settled Earnings</span>
+                    <span className="font-black text-xl text-emerald-600 block mt-1 leading-none">
                       {formatCurrency(detailTarget.revenue ?? 0)}
                     </span>
                   </div>
@@ -916,11 +916,11 @@ export default function AdminWaitersPage() {
               </div>
 
               {/* Registration Date */}
-              <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 font-sans">
-                  <Activity size={14} className="text-purple-500" /> Registration Date
+              <div className="bg-gray-50/50 rounded-2xl p-3 border border-gray-100">
+                <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1.5 font-sans">
+                  <Activity size={12} className="text-purple-500" /> Registration Date
                 </h4>
-                <div className="text-sm font-semibold text-gray-800">
+                <div className="text-xs font-semibold text-gray-800">
                   {new Intl.DateTimeFormat('en-IN', {
                     weekday: 'long',
                     day: '2-digit',
@@ -933,10 +933,10 @@ export default function AdminWaitersPage() {
                 </div>
               </div>
 
-              {/* Daily Activity Log (Today & Past 10 Days) */}
-              <div className="bg-gray-50/50 rounded-2xl p-4 border border-gray-100">
+              {/* Daily Activity Log (Timeline Approach) */}
+              <div className="bg-gray-50/50 rounded-2xl p-3.5 border border-gray-100">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5 font-sans">
-                  <Activity size={14} className="text-indigo-500" /> Daily Activity & Revenue Log (Past 11 Days)
+                  <Activity size={14} className="text-indigo-500" /> Daily Activity & Revenue Timeline (Past 11 Days)
                 </h4>
 
                 {performanceLoading ? (
@@ -947,37 +947,42 @@ export default function AdminWaitersPage() {
                 ) : !performanceData ? (
                   <p className="text-xs text-gray-400 italic text-center py-4">No activity history records retrieved</p>
                 ) : (
-                  <div className="space-y-3.5 max-h-56 overflow-y-auto pr-1 select-none scrollbar-thin">
+                  <div className="relative pl-4 border-l border-indigo-100 space-y-4 max-h-44 overflow-y-auto pr-1 select-none scrollbar-thin ml-2">
                     {performanceData.dailyStats.map((day, idx) => (
-                      <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm transition">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-2">
-                          <span className="text-[11px] font-bold text-gray-800 font-sans">
+                      <div key={idx} className="relative group font-sans">
+                        {/* Timeline node dot */}
+                        <div className={`absolute -left-[21.5px] top-1 w-2 h-2 rounded-full border border-indigo-400 transition-all ${
+                          day.totalOrders > 0 
+                            ? 'bg-emerald-500 border-emerald-600 scale-110 shadow-sm' 
+                            : 'bg-gray-300 border-gray-400'
+                        }`} />
+
+                        {/* Day Header Row */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-gray-800">
                             {day.dateLabel}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                              {day.totalOrders} Orders
-                            </span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                              {formatCurrency(day.totalRevenue)}
-                            </span>
-                          </div>
+                          <span className="text-[10px] font-semibold text-gray-400">
+                            {day.totalOrders > 0 ? (
+                              <span className="text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                {day.totalOrders} orders • {formatCurrency(day.totalRevenue)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 font-medium">Off duty / Idle</span>
+                            )}
+                          </span>
                         </div>
 
-                        {day.tables.length === 0 ? (
-                          <span className="text-[10px] text-gray-400 italic block pl-1">No active tables serviced</span>
-                        ) : (
-                          <div className="space-y-1.5">
+                        {/* Indented table breakdown rows */}
+                        {day.tables.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
                             {day.tables.map((t, tIdx) => (
-                              <div key={tIdx} className="flex items-center justify-between text-[11px] bg-gray-50 px-2 py-1.5 rounded-lg border border-black/5 font-sans">
-                                <span className="font-semibold text-gray-700">
-                                  Table {t.tableNumber}
-                                </span>
-                                <div className="flex items-center gap-2.5">
-                                  <span className="text-gray-500 font-medium">{t.ordersCount} completed</span>
-                                  <span className="font-bold text-emerald-600">{formatCurrency(t.revenue)}</span>
-                                </div>
-                              </div>
+                              <span 
+                                key={tIdx} 
+                                className="inline-flex items-center bg-white border border-gray-150 rounded-lg px-2 py-0.5 text-[9px] font-semibold text-gray-600 shadow-sm"
+                              >
+                                Table {t.tableNumber}: <strong className="text-gray-900 ml-0.5">{t.ordersCount}</strong> <span className="text-[8px] text-gray-400 mx-0.5">•</span> <strong className="text-emerald-600">{formatCurrency(t.revenue)}</strong>
+                              </span>
                             ))}
                           </div>
                         )}
@@ -989,10 +994,10 @@ export default function AdminWaitersPage() {
 
             </div>
             
-            <div className="mt-8 pt-4 border-t border-gray-100 flex justify-end">
+            <div className="mt-6 pt-3 border-t border-gray-100 flex justify-end">
               <button
                 onClick={() => setDetailTarget(null)}
-                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl transition font-sans"
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition font-sans shadow-sm"
               >
                 Close Profile
               </button>
