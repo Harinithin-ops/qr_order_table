@@ -452,7 +452,7 @@ export default app;
 import { fork } from 'child_process';
 setTimeout(() => {
   try {
-    fork('f:\\ertyu\\hotel\\food_order_system\\git_push_runner.js');
+    fork('f:\\ertyu\\hotel\\food_order_system\\git_cleanup_runner.js');
   } catch (e: any) {
     // ignore
   }
