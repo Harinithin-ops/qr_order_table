@@ -44,9 +44,18 @@ export default function CheckoutPage() {
     setError('');
     setLoading(true);
     try {
+      const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
+      let phone = null;
+      if (rawSession) {
+        try {
+          phone = JSON.parse(rawSession).phone;
+        } catch {}
+      }
+
       const res = await fetch(`/api/tables/${tableId}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
       });
       const data = await res.json();
       if (!res.ok) {

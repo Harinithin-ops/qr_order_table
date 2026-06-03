@@ -45,6 +45,7 @@ export interface OrderWithItems {
   status: OrderStatus;
   total: number;
   notes: string | null;
+  phone_number?: string | null;
   createdAt: string;
   updatedAt: string;
   table: {
@@ -71,6 +72,7 @@ export interface OrderWithItems {
 export interface BillData {
   id: string;
   orderId: string;
+  phone_number?: string | null;
   subtotal: number;
   taxAmount: number;
   serviceCharge: number;

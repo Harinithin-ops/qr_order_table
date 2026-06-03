@@ -149,6 +149,11 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
 
+} catch (err: any) {
+    res.status(500).json({ error: err.message, stderr: err.stderr?.toString(), stdout: err.stdout?.toString() });
+  }
+});
+
 // Auto-cleanup: delete all bills/orders older than 2 days every 48 hours
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
 const runAutoCleanup = async () => {
@@ -249,6 +254,77 @@ const runStartersMigration = async () => {
 };
 runStartersMigration();
 
+// Backfill Migration: Automatically parse and backfill phone_number for any existing active orders/bills that have phone number in their notes or sessions
+const runPhoneBackfillMigration = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    
+    // Find all orders where phone_number is null
+    const ordersWithNullPhone = await prisma.order.findMany({
+      where: {
+        phone_number: null,
+      },
+      include: {
+        bill: true,
+      }
+    });
+    
+    if (ordersWithNullPhone.length > 0) {
+      console.log(`[Phone Migration] Found ${ordersWithNullPhone.length} orders with null phone_number. Attempting to backfill...`);
+      
+      for (const order of ordersWithNullPhone) {
+        let phone: string | null = null;
+        
+        // 1. Try resolving phone from customerId session
+        if (order.customerId) {
+          const session = await prisma.customerSession.findUnique({
+            where: { id: order.customerId }
+          });
+          if (session && session.phone) {
+            phone = session.phone.trim();
+          }
+        }
+        
+        // 2. Try parsing phone from notes with prefix
+        if (!phone && order.notes) {
+          const match = order.notes.match(/Phone:\s*([^\s|]+)/i);
+          if (match) {
+            phone = match[1].trim();
+          }
+        }
+        
+        // 3. Try parsing any 10-digit number from notes as fallback
+        if (!phone && order.notes) {
+          const matchDigits = order.notes.match(/\b\d{10}\b/);
+          if (matchDigits) {
+            phone = matchDigits[0].trim();
+          }
+        }
+        
+        // Update if resolved
+        if (phone) {
+          console.log(`[Phone Migration] Backfilling order ${order.id} with phone_number: ${phone}`);
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { phone_number: phone }
+          });
+          
+          if (order.bill && !order.bill.phone_number) {
+            await prisma.bill.update({
+              where: { id: order.bill.id },
+              data: { phone_number: phone }
+            });
+            console.log(`[Phone Migration] Backfilling bill ${order.bill.id} with phone_number: ${phone}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Phone Migration] Error during backfill:', err);
+  }
+};
+runPhoneBackfillMigration();
+
 // DDL & Resequence Migration: Automatically drops the unique constraint on billNumber and re-indexes all bills daily-resetting starting from 0001
 const runResequenceMigration = async () => {
   try {
@@ -313,6 +389,8 @@ if (!process.env.VERCEL) {
 export default app;
 
 // Trigger nodemon reload for database schema changes
+// Restarting to flush pgbouncer pooler cache
+
 
 
 

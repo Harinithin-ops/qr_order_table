@@ -211,6 +211,7 @@ export default function WaiterDashboard() {
       const res = await fetch(`/api/tables/${order.tableId}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: order.phone_number }),
       });
       if (res.ok) {
         const bill = await res.json();

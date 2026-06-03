@@ -64,6 +64,7 @@ model Order {
   total     Float
   notes     String?
   customerId String?
+  phone_number String?
   items     OrderItem[]
   bill      Bill?
   createdAt DateTime    @default(now())
@@ -86,6 +87,7 @@ model Bill {
   id               String   @id @default(cuid())
   orderId          String   @unique
   order            Order    @relation(fields: [orderId], references: [id])
+  phone_number     String?
   subtotal         Float
   taxRate          Float    @default(0.02)
   taxAmount        Float

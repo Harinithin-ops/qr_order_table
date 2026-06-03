@@ -4,18 +4,62 @@ import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { TAX_RATE, generateBillNumber } from '../lib/utils.js';
 
-export async function mergeAndGetTableBill(tableId: string) {
-  // Fetch all active orders for this table
-  const orders = await prisma.order.findMany({
-    where: {
-      tableId,
-      status: { notIn: ['PAID', 'CANCELLED'] }
-    },
-    include: { bill: true, items: true }
-  });
+export async function mergeAndGetCustomerBill(phone_number: string | null, tableId?: string, targetOrderId?: string) {
+  let orders = [];
+  
+  // Clean up phone number
+  const isGuest = !phone_number || phone_number.trim() === '' || phone_number.toLowerCase() === 'guest';
+  const cleanPhone = isGuest ? null : phone_number!.trim();
+
+  if (cleanPhone) {
+    // Fetch all active orders for this phone number across the entire restaurant
+    orders = await prisma.order.findMany({
+      where: {
+        phone_number: cleanPhone,
+        status: { notIn: ['PAID', 'CANCELLED'] }
+      },
+      include: { bill: true, items: true }
+    });
+  } else {
+    // If Guest, we look at the specific table (if tableId is known) or the table of the target order.
+    let resolvedTableId = tableId;
+    if (!resolvedTableId && targetOrderId) {
+      const targetOrder = await prisma.order.findUnique({
+        where: { id: targetOrderId }
+      });
+      if (targetOrder) {
+        resolvedTableId = targetOrder.tableId;
+      }
+    }
+
+    if (resolvedTableId) {
+      // Fetch all active guest orders at this specific table
+      orders = await prisma.order.findMany({
+        where: {
+          tableId: resolvedTableId,
+          OR: [
+            { phone_number: null },
+            { phone_number: '' },
+            { phone_number: 'Guest' }
+          ],
+          status: { notIn: ['PAID', 'CANCELLED'] }
+        },
+        include: { bill: true, items: true }
+      });
+    } else if (targetOrderId) {
+      // Fallback to just the target order itself
+      const targetOrder = await prisma.order.findUnique({
+        where: { id: targetOrderId },
+        include: { bill: true, items: true }
+      });
+      if (targetOrder && !['PAID', 'CANCELLED'].includes(targetOrder.status)) {
+        orders = [targetOrder];
+      }
+    }
+  }
 
   if (orders.length === 0) {
-    throw new Error('No active orders found for this table');
+    throw new Error('No active orders found to generate a bill');
   }
 
   // Step 1: Generate bills for any orders that don't have one yet
@@ -28,6 +72,7 @@ export async function mergeAndGetTableBill(tableId: string) {
       const bill = await prisma.bill.create({
         data: {
           orderId: order.id,
+          phone_number: cleanPhone,
           subtotal,
           taxAmount,
           total,
@@ -43,7 +88,7 @@ export async function mergeAndGetTableBill(tableId: string) {
       eventEmitter.emit('ORDER_UPDATE', {
         orderId: order.id,
         status: 'PENDING',
-        tableId,
+        tableId: order.tableId,
         billId: bill.id,
       });
     } else {
@@ -59,8 +104,7 @@ export async function mergeAndGetTableBill(tableId: string) {
   // Re-fetch orders with bills
   const updatedOrders = await prisma.order.findMany({
     where: {
-      tableId,
-      status: { notIn: ['PAID', 'CANCELLED'] }
+      id: { in: orders.map(o => o.id) }
     },
     include: {
       bill: true,
@@ -142,7 +186,7 @@ export async function mergeAndGetTableBill(tableId: string) {
     eventEmitter.emit('ORDER_UPDATE', {
       orderId: primaryBill.orderId,
       status: 'PENDING',
-      tableId,
+      tableId: primaryBill.order.tableId,
       billId: primaryBill.id,
     });
 
@@ -150,6 +194,21 @@ export async function mergeAndGetTableBill(tableId: string) {
   });
 
   return mergedBill;
+}
+
+export async function mergeAndGetTableBill(tableId: string) {
+  // Find any active order for the table, get its phone number, and call mergeAndGetCustomerBill
+  const activeOrder = await prisma.order.findFirst({
+    where: {
+      tableId,
+      status: { notIn: ['PAID', 'CANCELLED'] }
+    }
+  });
+  if (!activeOrder) {
+    throw new Error('No active orders found for this table');
+  }
+  const phone = activeOrder.phone_number || 'Guest';
+  return mergeAndGetCustomerBill(phone, tableId, activeOrder.id);
 }
 
 export async function createBill(req: Request, res: Response) {
@@ -164,7 +223,7 @@ export async function createBill(req: Request, res: Response) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const bill = await mergeAndGetTableBill(order.tableId);
+    const bill = await mergeAndGetCustomerBill(order.phone_number, order.tableId, order.id);
     return res.json(bill);
   } catch (error: any) {
     console.error('Failed to generate bill:', error);
@@ -634,6 +693,7 @@ export async function mergeBills(req: Request, res: Response) {
 export async function tableCheckout(req: Request, res: Response) {
   try {
     const { tableId } = req.params; // can be slug or id
+    const { phone } = req.body;
 
     // Resolve table
     const table = await prisma.table.findFirst({
@@ -644,165 +704,29 @@ export async function tableCheckout(req: Request, res: Response) {
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    // Fetch all orders for this table that are not yet PAID or CANCELLED
-    const orders = await prisma.order.findMany({
-      where: {
-        tableId: table.id,
-        status: { notIn: ['PAID', 'CANCELLED'] }
-      },
-      include: { items: true, bill: true }
-    });
+    let targetPhone = phone;
 
-    if (orders.length === 0) {
-      return res.status(404).json({ error: 'No active orders found for this table' });
-    }
-
-    const hasAnyBill = orders.some(o => o.bill !== null);
-    if (!hasAnyBill) {
-      return res.status(403).json({ 
-        error: 'BILL_NOT_GENERATED', 
-        message: 'Billing is locked. Awaiting waiter billing.',
-        tableId: table.id
-      });
-    }
-
-    // Step 1: Generate bills for any orders that don't have one yet
-    for (const order of orders) {
-      if (!order.bill) {
-        const subtotal = order.total;
-        const taxAmount = subtotal * TAX_RATE;
-        const total = subtotal + taxAmount;
-
-        const bill = await prisma.bill.create({
-          data: {
-            orderId: order.id,
-            subtotal,
-            taxAmount,
-            total,
-            billNumber: await generateBillNumber(),
-          }
-        });
-
-        // Mark order as PENDING
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { status: 'PENDING' }
-        });
-
-        eventEmitter.emit('ORDER_UPDATE', {
-          orderId: order.id,
-          status: 'PENDING',
+    if (!targetPhone) {
+      // Fallback: get phone number of active orders at this table
+      const activeOrder = await prisma.order.findFirst({
+        where: {
           tableId: table.id,
-          billId: bill.id,
-        });
-      } else if (!['PENDING', 'SERVED', 'READY'].includes(order.status) === false) {
-        // Ensure order status is PENDING
-        if (order.status !== 'PENDING') {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { status: 'PENDING' }
-          });
+          status: { notIn: ['PAID', 'CANCELLED'] }
         }
+      });
+      if (activeOrder) {
+        targetPhone = activeOrder.phone_number || 'Guest';
+      } else {
+        return res.status(400).json({ error: 'Customer phone number is required for checkout' });
       }
     }
 
-    // Re-fetch orders with bills
-    const ordersWithBills = await prisma.order.findMany({
-      where: {
-        tableId: table.id,
-        status: { notIn: ['PAID', 'CANCELLED'] }
-      },
-      include: {
-        bill: true,
-        items: { include: { menuItem: true } }
-      }
-    });
-
-    const bills = ordersWithBills.map(o => o.bill).filter(Boolean) as any[];
-
-    if (bills.length === 0) {
-      return res.status(500).json({ error: 'Failed to generate bills' });
-    }
-
-    // Step 2: If only one bill, return it directly
-    if (bills.length === 1) {
-      const singleBill = await prisma.bill.findUnique({
-        where: { id: bills[0].id },
-        include: {
-          order: {
-            include: {
-              table: true,
-              items: { include: { menuItem: true } }
-            }
-          }
-        }
-      });
-      return res.json(singleBill);
-    }
-
-    // Step 3: Merge all bills into the first one
-    const [primaryBill, ...otherBills] = bills;
-
-    const mergedBill = await prisma.$transaction(async (tx) => {
-      for (const sourceBill of otherBills) {
-        // Move all items from source order to primary order
-        await tx.orderItem.updateMany({
-          where: { orderId: sourceBill.orderId },
-          data: { orderId: primaryBill.orderId }
-        });
-
-        // Delete source bill and order
-        await tx.bill.delete({ where: { id: sourceBill.id } });
-        await tx.order.delete({ where: { id: sourceBill.orderId } });
-      }
-
-      // Recalculate totals for primary order
-      const allItems = await tx.orderItem.findMany({
-        where: { orderId: primaryBill.orderId }
-      });
-
-      const newSubtotal = allItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-      const newTaxAmount = newSubtotal * TAX_RATE;
-      const newTotal = newSubtotal + newTaxAmount;
-
-      // Update primary order total
-      await tx.order.update({
-        where: { id: primaryBill.orderId },
-        data: { total: newSubtotal }
-      });
-
-      // Update primary bill totals
-      const updated = await tx.bill.update({
-        where: { id: primaryBill.id },
-        data: {
-          subtotal: newSubtotal,
-          taxAmount: newTaxAmount,
-          total: newTotal
-        },
-        include: {
-          order: {
-            include: {
-              table: true,
-              items: { include: { menuItem: true } }
-            }
-          }
-        }
-      });
-
-      eventEmitter.emit('ORDER_UPDATE', {
-        orderId: primaryBill.orderId,
-        status: 'PENDING',
-        tableId: table.id,
-        billId: primaryBill.id,
-      });
-
-      return updated;
-    });
-
-    return res.json(mergedBill);
-  } catch (error) {
-    console.error('Failed to process table checkout:', error);
-    return res.status(500).json({ error: 'Failed to process checkout' });
+    // Generate/merge bill for this phone number
+    const bill = await mergeAndGetCustomerBill(targetPhone, table.id);
+    return res.json(bill);
+  } catch (error: any) {
+    console.error('Failed to process customer checkout:', error);
+    return res.status(500).json({ error: error.message || 'Failed to process checkout' });
   }
 }
 
@@ -827,7 +751,7 @@ export async function createBillWaiter(req: Request, res: Response) {
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const bill = await mergeAndGetTableBill(order.tableId);
+    const bill = await mergeAndGetCustomerBill(order.phone_number, order.tableId, order.id);
     return res.json(bill);
   } catch (error: any) {
     console.error('Failed to create waiter bill:', error);

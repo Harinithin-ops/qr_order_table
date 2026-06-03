@@ -95,7 +95,8 @@ export default function DashboardPage() {
 
       const res = await fetch(`/api/tables/${orderObj.tableId}/checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: orderObj.phone_number })
       });
       
       if (res.ok) {

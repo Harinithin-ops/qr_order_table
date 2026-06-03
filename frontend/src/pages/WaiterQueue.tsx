@@ -24,6 +24,7 @@ interface Order {
   tableId: string;
   table: TableInfo;
   items: OrderItem[];
+  phone_number?: string | null;
 }
 interface CustomItem { name: string; price: number; quantity: number; }
 interface Bill {
@@ -38,6 +39,7 @@ interface Bill {
   paymentMethod: string | null;
   customItems: string; // JSON string
   order: Order & { table: TableInfo };
+  phone_number?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -484,19 +486,19 @@ function BillModal({
 function TableGroup({
   tableNumber,
   orders,
-  bill,
+  billByPhone,
   onGenerateBill,
   onOpenBill,
-  generating,
+  generatingForPhone,
   onUpdateOrderStatus,
   updatingStatusOrderId,
 }: {
   tableNumber: number;
   orders: Order[];
-  bill: Bill | null;
-  onGenerateBill: () => void;
-  onOpenBill: () => void;
-  generating: boolean;
+  billByPhone: Record<string, Bill>;
+  onGenerateBill: (phone: string, customerOrders: Order[]) => void;
+  onOpenBill: (phone: string) => void;
+  generatingForPhone: string | null;
   onUpdateOrderStatus: (orderId: string, status: string) => Promise<void>;
   updatingStatusOrderId: string | null;
 }) {
@@ -504,12 +506,32 @@ function TableGroup({
   const totalItems = orders.reduce((s, o) => s + o.items.reduce((a, i) => a + i.quantity, 0), 0);
   const grandTotal = orders.reduce((s, o) => s + o.total, 0);
   const hasPending = orders.some(o => o.status === 'PENDING');
-  const isPaid = bill?.paymentStatus === 'PAID';
+  
+  // Group orders by phone number
+  const customerGroups = orders.reduce<Record<string, Order[]>>((acc, order) => {
+    let phone = order.phone_number;
+    if (!phone && order.notes) {
+      const match = order.notes.match(/Phone:\s*([^\s|]+)/i);
+      if (match) {
+        phone = match[1].trim();
+      } else {
+        const matchDigits = order.notes.match(/\b\d{10}\b/);
+        if (matchDigits) {
+          phone = matchDigits[0].trim();
+        }
+      }
+    }
+    const key = phone || 'Guest';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(order);
+    return acc;
+  }, {});
+
   const hasUnavailable = orders.some(o => o.items.some(i => i.isUnavailable));
 
   return (
     <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${
-      isPaid ? 'border-emerald-200 opacity-60' : hasPending ? 'border-orange-200' : 'border-gray-100'
+      hasPending ? 'border-orange-200' : 'border-gray-100'
     }`}>
       {/* Table Header */}
       <button
@@ -519,7 +541,6 @@ function TableGroup({
       >
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-sm ${
-            isPaid ? 'bg-emerald-100 text-emerald-700' :
             hasPending ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'
           }`}>
             {tableNumber}
@@ -537,142 +558,155 @@ function TableGroup({
               <AlertCircle size={10} className="text-red-500" /> OUT OF STOCK
             </span>
           )}
-          {isPaid && (
-            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">PAID</span>
-          )}
-          {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH' && (
-            <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-full animate-pulse">CASH REQUESTED</span>
-          )}
-          {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'UPI' && (
-            <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200 rounded-full">UPI SUBMITTED</span>
-          )}
-          {!isPaid && bill && bill.paymentStatus === 'PENDING' && (
-            <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200 rounded-full">BILL READY</span>
-          )}
           {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
         </div>
       </button>
 
-      {/* Orders list */}
+      {/* Customer sections */}
       {expanded && (
-        <div className="border-t border-gray-100 divide-y divide-gray-100">
-          {orders.map(order => (
-            <div key={order.id} className="px-4 py-3.5 bg-white">
-              {/* Order Header / Metadata */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-gray-400 font-mono bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
-                    #{order.id.slice(-5).toUpperCase()}
-                  </span>
-                  {order.notes && (
-                    <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-md max-w-[140px] truncate">
-                      {order.notes.replace(/^Name:\s*/i, '')}
-                    </span>
-                  )}
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[order.status] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                  {order.status}
-                </span>
-              </div>
-
-              {/* Clean Dish List (visible and clear on mobile) */}
-              <div className="space-y-1.5 mt-2">
-                {order.items.map(item => (
-                  <div key={item.id} className={`flex justify-between items-center border rounded-xl px-3 py-2 text-xs ${item.isUnavailable ? 'bg-red-50 border-red-200 text-red-700 font-bold animate-pulse' : 'bg-gray-55 border-gray-150 text-gray-700'}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`font-bold px-1.5 py-0.5 rounded-md shrink-0 border ${item.isUnavailable ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                        {item.quantity}×
-                      </span>
-                      <span className="truncate">{item.menuItem?.name || 'Unknown Item'}</span>
-                      {item.isUnavailable && (
-                        <span className="ml-1 bg-red-100 text-red-800 text-[8px] font-black px-1 rounded uppercase tracking-wider">Unavailable</span>
-                      )}
-                    </div>
-                    <span className="font-semibold ml-2">
-                      {fmt(item.price * item.quantity)}
+        <div className="border-t border-gray-100 divide-y divide-gray-200">
+          {Object.entries(customerGroups).map(([phone, customerOrders]) => {
+            const bill = billByPhone[phone] || null;
+            const isPaid = bill?.paymentStatus === 'PAID';
+            const customerTotal = customerOrders.reduce((sum, o) => sum + o.total, 0);
+            const subtotal = bill ? bill.subtotal : customerTotal;
+            const taxAmount = bill ? bill.taxAmount : subtotal * TAX_RATE;
+            const discount = bill ? bill.discount : 0;
+            const total = bill ? bill.total : subtotal + taxAmount;
+            
+            const isGenerating = generatingForPhone === phone;
+            
+            return (
+              <div key={phone} className={`p-4 bg-white ${isPaid ? 'bg-emerald-50/20' : ''}`}>
+                {/* Customer Section Header */}
+                <div className="flex items-center justify-between mb-3 border-b border-dashed border-gray-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                      Customer: {phone}
                     </span>
                   </div>
-                ))}
-              </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isPaid && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">PAID</span>
+                    )}
+                    {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH' && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-full animate-pulse">CASH REQUESTED</span>
+                    )}
+                    {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'UPI' && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200 rounded-full">UPI SUBMITTED</span>
+                    )}
+                    {!isPaid && bill && bill.paymentStatus === 'PENDING' && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-50 text-orange-600 border border-orange-200 rounded-full">BILL READY</span>
+                    )}
+                  </div>
+                </div>
 
-              {/* Order Footer & Actions */}
-              <div className="mt-3 flex items-center justify-between gap-3 pt-2.5 border-t border-dashed border-gray-100">
-                <span className="text-xs text-gray-500 font-medium">
-                  Total: <span className="font-bold text-gray-800">{fmt(order.total)}</span>
-                </span>
-                
-                <div className="flex gap-2 items-center">
-                  {/* Status advance button inside the queue */}
-                  {['ACCEPTED', 'PREPARING'].includes(order.status) && (
-                    <button
-                      onClick={() => {
-                        const next = order.status === 'ACCEPTED' ? 'PREPARING' : 'READY';
-                        onUpdateOrderStatus(order.id, next).catch(e => console.error(e));
-                      }}
-                      disabled={updatingStatusOrderId === order.id}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-700 font-semibold text-[11px] rounded-lg transition active:scale-95 disabled:opacity-60"
-                    >
-                      {order.status === 'ACCEPTED' ? 'Mark Preparing' : 'Mark Ready'}
-                    </button>
-                  )}
+                {/* Orders under this Customer */}
+                <div className="space-y-3">
+                  {customerOrders.map(order => (
+                    <div key={order.id} className="bg-gray-50/30 rounded-xl p-3 border border-gray-100">
+                      {/* Order metadata */}
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            #{order.id.slice(-5).toUpperCase()}
+                          </span>
+                          {order.notes && (
+                            <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-1 rounded truncate max-w-[120px]">
+                              {order.notes.replace(/^Phone:\s*[^\s|]+/, '').replace(/^Name:\s*/i, '').replace(/^\|\s*/, '') || 'Notes'}
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[order.status] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                          {order.status}
+                        </span>
+                      </div>
 
-                  {order.status !== 'SERVED' && order.status !== 'PAID' ? (
-                    <button
-                      onClick={() => onUpdateOrderStatus(order.id, 'SERVED').catch(e => console.error(e))}
-                      disabled={updatingStatusOrderId === order.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-[11px] rounded-lg transition active:scale-95 shadow-sm shadow-emerald-500/10"
-                    >
-                      {updatingStatusOrderId === order.id ? (
-                        <Activity size={12} className="animate-spin" />
-                      ) : (
-                        <CheckCircle2 size={12} />
-                      )}
-                      Confirm Served
-                    </button>
-                  ) : (
-                    <span className="text-emerald-600 font-bold text-[11px] flex items-center gap-1">
-                      <CheckCircle2 size={12} className="text-emerald-500" /> Served
-                    </span>
-                  )}
+                      {/* Items */}
+                      <div className="space-y-1">
+                        {order.items.map(item => (
+                          <div key={item.id} className={`flex justify-between items-center border rounded-xl px-2.5 py-1.5 text-xs ${item.isUnavailable ? 'bg-red-50 border-red-200 text-red-750 font-bold animate-pulse' : 'bg-gray-50 border-gray-105 text-gray-700'}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`font-bold px-1 rounded border ${item.isUnavailable ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                {item.quantity}×
+                              </span>
+                              <span className="truncate">{item.menuItem?.name || 'Unknown Item'}</span>
+                            </div>
+                            <span className="font-semibold ml-2">{fmt(item.price * item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Status advancement buttons */}
+                      <div className="mt-2.5 pt-2 border-t border-dashed border-gray-150 flex justify-end gap-2">
+                        {['ACCEPTED', 'PREPARING'].includes(order.status) && (
+                          <button
+                            onClick={() => {
+                              const next = order.status === 'ACCEPTED' ? 'PREPARING' : 'READY';
+                              onUpdateOrderStatus(order.id, next).catch(e => console.error(e));
+                            }}
+                            disabled={updatingStatusOrderId === order.id}
+                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-700 font-semibold text-[10px] rounded-lg transition"
+                          >
+                            {order.status === 'ACCEPTED' ? 'Mark Preparing' : 'Mark Ready'}
+                          </button>
+                        )}
+                        {order.status !== 'SERVED' && order.status !== 'PAID' ? (
+                          <button
+                            onClick={() => onUpdateOrderStatus(order.id, 'SERVED').catch(e => console.error(e))}
+                            disabled={updatingStatusOrderId === order.id}
+                            className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[10px] rounded-lg transition active:scale-95 shadow-sm shadow-emerald-500/10"
+                          >
+                            Confirm Served
+                          </button>
+                        ) : (
+                          <span className="text-emerald-600 font-bold text-[10px] flex items-center gap-0.5">
+                            ✓ Served
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Customer Section Footer / Action Bar */}
+                <div className="mt-3 bg-gray-50/50 rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-3">
+                  <div className="text-xs text-gray-500 font-medium">
+                    Total: <span className="font-bold text-gray-900">{fmt(total)}</span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {!bill ? (
+                      <button
+                        onClick={() => onGenerateBill(phone, customerOrders)}
+                        disabled={isGenerating}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg transition active:scale-95 disabled:opacity-60"
+                      >
+                        {isGenerating ? 'Generating…' : 'Generate Bill'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onOpenBill(phone)}
+                        className={`px-3 py-1.5 font-bold text-[11px] rounded-lg transition active:scale-95 shadow-sm ${
+                          isPaid
+                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                            : bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 animate-pulse'
+                              : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
+                        }`}
+                      >
+                        {isPaid
+                          ? 'View Bill (Paid)'
+                          : bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH'
+                            ? `Confirm Cash · ${fmt(bill.total)}`
+                            : `View & Pay Bill · ${fmt(bill.total)}`}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-
-          {/* Action Bar */}
-          <div className="px-4 py-3 bg-gray-50/50 flex items-center gap-2">
-            {!bill ? (
-              <button
-                onClick={onGenerateBill}
-                disabled={generating}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition active:scale-95 shadow-sm shadow-amber-500/20 disabled:opacity-60"
-              >
-                {generating ? (
-                  <><Activity size={13} className="animate-spin" /> Generating…</>
-                ) : (
-                  <><Receipt size={13} /> Generate Bill</>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={onOpenBill}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 font-bold text-xs rounded-xl transition active:scale-95 shadow-sm ${
-                  isPaid
-                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                    : bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH'
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 animate-pulse'
-                      : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
-                }`}
-              >
-                <Receipt size={13} />
-                {isPaid
-                  ? 'View Bill (Paid)'
-                  : bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH'
-                    ? `Confirm Cash Payment · ${fmt(bill.total)}`
-                    : `View & Pay Bill · ${fmt(bill.total)}`}
-              </button>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -689,10 +723,10 @@ export default function WaiterQueue() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const { lastEvent } = useEventSource('/api/events');
 
-  // Active table number for modal
-  const [activeTableNumber, setActiveTableNumber] = useState<number | null>(null);
-  // Which table is generating a bill
-  const [generatingFor, setGeneratingFor] = useState<number | null>(null);
+  // Active customer modal data
+  const [activeModalData, setActiveModalData] = useState<{ tableNumber: number; phone: string } | null>(null);
+  // Which phone number is generating a bill
+  const [generatingForPhone, setGeneratingForPhone] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -752,25 +786,30 @@ export default function WaiterQueue() {
     .map(Number)
     .sort((a, b) => a - b);
 
-  // Map orderId → bill
-  const billByOrderId = bills.reduce<Record<string, Bill>>((acc, b) => {
-    acc[b.orderId] = b;
+  // Map phone_number → bill
+  const billByPhone = bills.reduce<Record<string, Bill>>((acc, b) => {
+    let phone = b.phone_number || b.order?.phone_number;
+    if (!phone && b.order?.notes) {
+      const match = b.order.notes.match(/Phone:\s*([^\s|]+)/i);
+      if (match) {
+        phone = match[1].trim();
+      } else {
+        const matchDigits = b.order.notes.match(/\b\d{10}\b/);
+        if (matchDigits) {
+          phone = matchDigits[0].trim();
+        }
+      }
+    }
+    if (phone) {
+      acc[phone] = b;
+    }
     return acc;
   }, {});
 
-  // For a table group, find the bill for any order in that group
-  const getBillForTable = (tableOrders: Order[]): Bill | null => {
-    for (const o of tableOrders) {
-      if (billByOrderId[o.id]) return billByOrderId[o.id];
-    }
-    return null;
-  };
-
-  const handleGenerateBill = async (tableNumber: number, tableOrders: Order[]) => {
-    setGeneratingFor(tableNumber);
+  const handleGenerateBill = async (phone: string, customerOrders: Order[]) => {
+    setGeneratingForPhone(phone);
     try {
-      // Generate bill for the first order in the group (others get merged later by the system)
-      const targetOrder = tableOrders[0];
+      const targetOrder = customerOrders[0];
       const res = await fetch('/api/waiter/bills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -788,7 +827,7 @@ export default function WaiterQueue() {
     } catch (e) {
       console.error('Failed to generate bill:', e);
     } finally {
-      setGeneratingFor(null);
+      setGeneratingForPhone(null);
     }
   };
 
@@ -845,16 +884,15 @@ export default function WaiterQueue() {
           <div className="space-y-3">
             {sortedTables.map(tableNumber => {
               const tableOrders = tableGroups[tableNumber];
-              const bill = getBillForTable(tableOrders);
               return (
                 <TableGroup
                   key={tableNumber}
                   tableNumber={tableNumber}
                   orders={tableOrders}
-                  bill={bill}
-                  generating={generatingFor === tableNumber}
-                  onGenerateBill={() => setActiveTableNumber(tableNumber)}
-                  onOpenBill={() => setActiveTableNumber(tableNumber)}
+                  billByPhone={billByPhone}
+                  generatingForPhone={generatingForPhone}
+                  onGenerateBill={(phone, customerOrders) => handleGenerateBill(phone, customerOrders)}
+                  onOpenBill={(phone) => setActiveModalData({ tableNumber, phone })}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   updatingStatusOrderId={updatingStatusId}
                 />
@@ -865,24 +903,40 @@ export default function WaiterQueue() {
       </div>
 
       {/* Bill Modal (Rendered outside the animate-slide-up div to escape stacking context) */}
-      {activeTableNumber !== null && (() => {
-        const tableOrders = tableGroups[activeTableNumber] || [];
-        const bill = getBillForTable(tableOrders);
+      {activeModalData !== null && (() => {
+        const { tableNumber, phone } = activeModalData;
+        const tableOrders = tableGroups[tableNumber] || [];
+        const customerOrders = tableOrders.filter(o => {
+          let oPhone = o.phone_number;
+          if (!oPhone && o.notes) {
+            const match = o.notes.match(/Phone:\s*([^\s|]+)/i);
+            if (match) {
+              oPhone = match[1].trim();
+            } else {
+              const matchDigits = o.notes.match(/\b\d{10}\b/);
+              if (matchDigits) {
+                oPhone = matchDigits[0].trim();
+              }
+            }
+          }
+          return (oPhone || 'Guest') === phone;
+        });
+        const bill = billByPhone[phone] || null;
         return (
           <BillModal
-            tableNumber={activeTableNumber}
-            orders={tableOrders}
+            tableNumber={tableNumber}
+            orders={customerOrders}
             bill={bill}
-            onClose={() => setActiveTableNumber(null)}
-            onGenerateBill={() => handleGenerateBill(activeTableNumber, tableOrders)}
+            onClose={() => setActiveModalData(null)}
+            onGenerateBill={() => handleGenerateBill(phone, customerOrders)}
             onPaid={async () => {
-              setActiveTableNumber(null);
+              setActiveModalData(null);
               await fetchData();
             }}
             onUpdated={updatedBill => {
               setBills(prev => prev.map(b => b.id === updatedBill.id ? updatedBill : b));
             }}
-            generating={generatingFor === activeTableNumber}
+            generating={generatingForPhone === phone}
             onRefresh={fetchData}
           />
         );

@@ -90,13 +90,36 @@ export async function createOrder(req: Request, res: Response) {
     }
 
     // Server-Side same customer-session order merging
-    let existingOrder = null;
+    let phone_number: string | null = null;
     if (customerId) {
+      const session = await prisma.customerSession.findUnique({
+        where: { id: customerId }
+      });
+      if (session) {
+        phone_number = session.phone;
+      }
+    }
+    if (!phone_number && notes) {
+      const match = notes.match(/Phone:\s*([^\s|]+)/i);
+      if (match) {
+        phone_number = match[1].trim();
+      } else {
+        const matchDigits = notes.match(/\b\d{10}\b/);
+        if (matchDigits) {
+          phone_number = matchDigits[0].trim();
+        }
+      }
+    }
+    if (!phone_number && req.body.phone_number) {
+      phone_number = String(req.body.phone_number).trim();
+    }
+
+    let existingOrder = null;
+    if (phone_number) {
       existingOrder = await prisma.order.findFirst({
         where: {
-          tableId: table.id,
-          customerId,
-          status: 'PLACED'
+          phone_number,
+          status: { notIn: ['PAID', 'CANCELLED'] }
         },
         include: {
           items: true
@@ -111,7 +134,7 @@ export async function createOrder(req: Request, res: Response) {
         const activeOrders = await prisma.order.findMany({
           where: {
             tableId: table.id,
-            status: 'PLACED'
+            status: { notIn: ['PAID', 'CANCELLED'] }
           },
           include: {
             items: true
@@ -187,35 +210,27 @@ export async function createOrder(req: Request, res: Response) {
           }
         }
 
-        // 3. Recalculate total price
-        const updatedItems = await tx.orderItem.findMany({
-          where: { orderId: existingOrder.id }
-        });
-        const newTotal = updatedItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-
-        // 4. Update the order with the new total, merged notes, and reset status if needed
+        // 3. Update order status and tableId if changed
         let newStatus = existingOrder.status;
         if (['READY', 'SERVED'].includes(existingOrder.status)) {
           newStatus = 'PLACED';
         }
 
-        const updated = await tx.order.update({
+        const updateData: any = {
+          notes: mergedNotes,
+          status: newStatus
+        };
+        if (table.id !== existingOrder.tableId) {
+          updateData.tableId = table.id;
+        }
+
+        await tx.order.update({
           where: { id: existingOrder.id },
-          data: {
-            total: newTotal,
-            notes: mergedNotes,
-            status: newStatus
-          },
-          include: {
-            table: true,
-            items: {
-              include: {
-                menuItem: true
-              }
-            }
-          }
+          data: updateData
         });
 
+        // 4. Sync totals and recalculate
+        const updated = await syncOrderAndBillTotals(existingOrder.id, tx);
         return updated;
       });
 
@@ -237,6 +252,7 @@ export async function createOrder(req: Request, res: Response) {
         total,
         notes,
         customerId: customerId || null,
+        phone_number: phone_number || null,
         items: {
           create: items.map((item: any) => ({
             menuItemId: item.menuItemId,
@@ -989,31 +1005,28 @@ export async function getActiveOrdersByCustomer(req: Request, res: Response) {
   try {
     const { tableId, customerId } = req.query;
 
-    if (!tableId || !customerId) {
-      return res.status(400).json({ error: 'tableId and customerId are required' });
+    if (!customerId) {
+      return res.status(400).json({ error: 'customerId is required' });
     }
 
-    const table = await prisma.table.findFirst({
-      where: {
-        OR: [
-          { id: String(tableId) },
-          { slug: String(tableId) }
-        ]
-      }
+    const session = await prisma.customerSession.findUnique({
+      where: { id: String(customerId) }
     });
 
-    if (!table) {
-      return res.status(404).json({ error: 'Table not found' });
+    let whereClause: any = {
+      status: {
+        notIn: ['PAID', 'CANCELLED']
+      }
+    };
+
+    if (session) {
+      whereClause.phone_number = session.phone;
+    } else {
+      whereClause.customerId = String(customerId);
     }
 
     const orders = await prisma.order.findMany({
-      where: {
-        tableId: table.id,
-        customerId: String(customerId),
-        status: {
-          notIn: ['PAID', 'CANCELLED']
-        }
-      },
+      where: whereClause,
       include: {
         table: true,
         items: {
