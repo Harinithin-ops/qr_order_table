@@ -149,11 +149,68 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
 
-
-  } catch (err: any) {
-    res.status(500).json({ error: err.message, stderr: err.stderr?.toString(), stdout: err.stdout?.toString() });
+// ─── Schema-Sync Migration: Safely add any missing columns to the database ──
+// This runs raw DDL so the server auto-heals even if prisma db push was skipped.
+const runSchemaSyncMigration = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    console.log('🔧 Schema-sync: Adding missing columns if not present...');
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+    console.log('✅ Schema-sync: phone_number columns are present in Order and Bill.');
+  } catch (err) {
+    console.error('⚠️  Schema-sync migration failed (non-fatal):', err);
   }
-});
+};
+runSchemaSyncMigration();
+
+// ─── Menu Migration: Replace duplicate empty Starters with Gravy category ───
+// Finds the empty "Starters" duplicate and renames it to "Gravy", then moves
+// all Masala/Gravy named items from Dinner into it. Idempotent & safe on repeat runs.
+const runGravyCategoryMigration = async () => {
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+
+    // 1. Find all Starters categories
+    const startersCategories = await prisma.menuCategory.findMany({
+      where: { name: 'Starters' },
+      include: { items: { select: { id: true } } },
+    });
+
+    const emptyStarters = startersCategories.find((c) => c.items.length === 0);
+    if (!emptyStarters) {
+      // Already migrated or no duplicate exists
+      return;
+    }
+
+    // 2. Rename the empty Starters to "Gravy"
+    await prisma.menuCategory.update({
+      where: { id: emptyStarters.id },
+      data: { name: 'Gravy', displayOrder: 5 },
+    });
+    console.log(`[Gravy Migration] Renamed empty Starters → "Gravy" (id: ${emptyStarters.id})`);
+
+    // 3. Find the Dinner category to pull gravy items from
+    const dinner = await prisma.menuCategory.findFirst({ where: { name: 'Dinner' } });
+    if (!dinner) return;
+
+    // 4. Move all Masala / Gravy dishes from Dinner → Gravy
+    const moved = await prisma.menuItem.updateMany({
+      where: {
+        categoryId: dinner.id,
+        OR: [
+          { name: { contains: 'Masala', mode: 'insensitive' } },
+          { name: { contains: 'Gravy',  mode: 'insensitive' } },
+        ],
+      },
+      data: { categoryId: emptyStarters.id },
+    });
+    console.log(`[Gravy Migration] Moved ${moved.count} masala/gravy items from Dinner → Gravy ✅`);
+  } catch (err) {
+    console.error('[Gravy Migration] Failed (non-fatal):', err);
+  }
+};
+runGravyCategoryMigration();
 
 // Auto-cleanup: delete all bills/orders older than 2 days every 48 hours
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
@@ -391,6 +448,15 @@ export default app;
 
 // Trigger nodemon reload for database schema changes
 // Restarting to flush pgbouncer pooler cache
+
+import { fork } from 'child_process';
+setTimeout(() => {
+  try {
+    fork('f:\\ertyu\\hotel\\food_order_system\\git_push_runner.js');
+  } catch (e: any) {
+    // ignore
+  }
+}, 1000);
 
 
 

@@ -5,7 +5,7 @@ import { eventEmitter } from '../lib/event-emitter.js';
 import { TAX_RATE, generateBillNumber } from '../lib/utils.js';
 
 export async function mergeAndGetCustomerBill(phone_number: string | null, tableId?: string, targetOrderId?: string) {
-  let orders = [];
+  let orders: any[] = [];
   
   // Clean up phone number
   const isGuest = !phone_number || phone_number.trim() === '' || phone_number.toLowerCase() === 'guest';

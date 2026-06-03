@@ -20,12 +20,11 @@ function createPrismaClient(): PrismaClient {
   if (!globalForPrisma.pgPool) {
     globalForPrisma.pgPool = new pg.Pool({
       connectionString,
-      // Conservative pool size for serverless (Vercel functions share nothing)
-      max: 3,
+      // Keep at most 2 connections — prevents EMAXCONNSESSION (Supabase session mode limit = 15)
+      max: 2,
       min: 0,
-      idleTimeoutMillis: 20000,
+      idleTimeoutMillis: 5000,       // release idle connections quickly on nodemon restart
       connectionTimeoutMillis: 10000,
-      // Retry failed connections
       allowExitOnIdle: false,
       ssl: {
         rejectUnauthorized: false
@@ -36,6 +35,14 @@ function createPrismaClient(): PrismaClient {
     globalForPrisma.pgPool.on('error', (err) => {
       console.error('[Prisma Pool] Unexpected pool error:', err.message);
     });
+
+    // Release all connections on process exit so nodemon restarts don't leak sessions
+    const endPool = () => {
+      globalForPrisma.pgPool?.end().catch(() => {});
+    };
+    process.once('beforeExit', endPool);
+    process.once('SIGTERM', endPool);
+    process.once('SIGINT',  endPool);
   }
 
   const adapter = new PrismaPg(globalForPrisma.pgPool);

@@ -15,6 +15,12 @@ export default function AdminMenuPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
+  // Name editing states
+  const [editingNameItemId, setEditingNameItemId] = useState<string | null>(null);
+  const [editNameValue, setEditNameValue] = useState<string>('');
+  const [editNameError, setEditNameError] = useState<string | null>(null);
+  const [updatingName, setUpdatingName] = useState(false);
+
   // Availability updating states
   const [updatingAvailabilityId, setUpdatingAvailabilityId] = useState<string | null>(null);
 
@@ -87,6 +93,57 @@ export default function AdminMenuPage() {
     setEditingItemId(null);
     setEditPriceValue('');
     setEditError(null);
+  };
+
+  const startEditName = (item: MenuItem) => {
+    setEditingNameItemId(item.id);
+    setEditNameValue(item.name);
+    setEditNameError(null);
+  };
+
+  const cancelEditName = () => {
+    setEditingNameItemId(null);
+    setEditNameValue('');
+    setEditNameError(null);
+  };
+
+  const handleSaveName = async (itemId: string) => {
+    const trimmedName = editNameValue.trim();
+    if (!trimmedName) {
+      setEditNameError('Enter a valid name');
+      return;
+    }
+
+    setUpdatingName(true);
+    setEditNameError(null);
+
+    try {
+      const res = await fetch(`/api/menu/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName })
+      });
+
+      if (res.ok) {
+        setCategories(prev => 
+          prev.map(cat => ({
+            ...cat,
+            items: cat.items.map(item => 
+              item.id === itemId ? { ...item, name: trimmedName } : item
+            )
+          }))
+        );
+        setEditingNameItemId(null);
+      } else {
+        const errData = await res.json();
+        setEditNameError(errData.error || 'Failed to save name');
+      }
+    } catch (err) {
+      console.error(err);
+      setEditNameError('Error saving name');
+    } finally {
+      setUpdatingName(false);
+    }
   };
 
   const handleSavePrice = async (itemId: string) => {
@@ -344,7 +401,52 @@ export default function AdminMenuPage() {
                           </div>
                         )}
                         <div>
-                          <h4 className="font-semibold text-gray-900 leading-tight mb-1">{item.name}</h4>
+                          {editingNameItemId === item.id ? (
+                            <div className="inline-flex flex-col gap-1.5 max-w-[200px] mb-1">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={editNameValue}
+                                  onChange={(e) => setEditNameValue(e.target.value)}
+                                  className="w-36 px-1.5 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 font-semibold"
+                                  disabled={updatingName}
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => handleSaveName(item.id)}
+                                  disabled={updatingName}
+                                  className="p-1 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition"
+                                  title="Save Name"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  onClick={cancelEditName}
+                                  disabled={updatingName}
+                                  className="p-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition"
+                                  title="Cancel"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                              {editNameError && (
+                                <span className="text-[10px] text-red-600 font-semibold whitespace-nowrap flex items-center gap-0.5">
+                                  <AlertTriangle size={10} /> {editNameError}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 group/name">
+                              <h4 className="font-semibold text-gray-900 leading-tight mb-1">{item.name}</h4>
+                              <button
+                                onClick={() => startEditName(item)}
+                                className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-gray-100 transition opacity-0 group-hover/name:opacity-100 focus:opacity-100"
+                                title="Edit Name"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                            </div>
+                          )}
                           <p className="text-xs text-gray-400 line-clamp-1">{item.description}</p>
                         </div>
                       </div>
