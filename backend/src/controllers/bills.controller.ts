@@ -926,3 +926,521 @@ export async function markBillPaid(req: Request, res: Response) {
   }
 }
 
+/**
+ * GET /api/tables/:tableId/orders
+ * Get all active orders (including their bills if any) for a table.
+ */
+export async function getTableOrders(req: Request, res: Response) {
+  try {
+    const { tableId } = req.params;
+    const table = await prisma.table.findFirst({
+      where: { OR: [{ id: tableId }, { slug: tableId }] }
+    });
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+    const orders = await prisma.order.findMany({
+      where: {
+        tableId: table.id,
+        status: { notIn: ['PAID', 'CANCELLED'] }
+      },
+      include: {
+        bill: true,
+        items: { include: { menuItem: true } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    return res.json(orders);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch table orders' });
+  }
+}
+
+/**
+ * GET /api/customers/:mobile/bills
+ * Retrieve bills by customer mobile number.
+ */
+export async function getCustomerBills(req: Request, res: Response) {
+  try {
+    const { mobile } = req.params;
+    const bills = await prisma.bill.findMany({
+      where: {
+        phone_number: mobile,
+        paymentStatus: { notIn: ['PAID'] }
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json(bills);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch customer bills' });
+  }
+}
+
+/**
+ * POST /api/bills/generate
+ * Generate a single bill for an order without automatic merging.
+ */
+export async function generateSingleBill(req: Request, res: Response) {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { bill: true, table: true }
+    });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (order.bill) {
+      return res.json(order.bill);
+    }
+
+    const subtotal = order.total;
+    const taxAmount = subtotal * TAX_RATE;
+    const total = subtotal + taxAmount;
+
+    const bill = await prisma.bill.create({
+      data: {
+        orderId: order.id,
+        phone_number: order.phone_number,
+        subtotal,
+        taxAmount,
+        total,
+        billNumber: await generateBillNumber(),
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { status: 'PENDING' }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: order.id,
+      status: 'PENDING',
+      tableId: order.tableId,
+      billId: bill.id,
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        audit_action: 'GENERATE_BILL',
+        details: `Generated bill ${bill.billNumber} for order ${order.id} (Table ${order.table.tableNumber})`
+      }
+    });
+
+    return res.json(bill);
+  } catch (error: any) {
+    console.error('Failed to generate single bill:', error);
+    return res.status(500).json({ error: error.message || 'Failed to generate bill' });
+  }
+}
+
+/**
+ * POST /api/bills/merge
+ * Manually merge two bills.
+ */
+export async function mergeBillsManual(req: Request, res: Response) {
+  try {
+    const { sourceBillId, targetBillId, reason } = req.body;
+    const authReq = req as AuthenticatedRequest;
+    const waiterUsername = authReq.username || 'unknown';
+
+    if (!sourceBillId || !targetBillId || sourceBillId === targetBillId) {
+      return res.status(400).json({ error: 'Valid source and target bill IDs are required' });
+    }
+
+    const sourceBill = await prisma.bill.findUnique({
+      where: { id: sourceBillId },
+      include: { order: { include: { items: true, table: true } } }
+    });
+
+    const targetBill = await prisma.bill.findUnique({
+      where: { id: targetBillId },
+      include: { order: { include: { items: true, table: true } } }
+    });
+
+    if (!sourceBill || !targetBill) {
+      return res.status(404).json({ error: 'Source or target bill not found' });
+    }
+
+    if (sourceBill.order.table.tableNumber !== targetBill.order.table.tableNumber) {
+      return res.status(400).json({ error: 'Bills must belong to the same table' });
+    }
+
+
+    if (sourceBill.paymentStatus === 'PAID' || targetBill.paymentStatus === 'PAID') {
+      return res.status(400).json({ error: 'Cannot merge paid bills' });
+    }
+
+    // Merge logic
+    const mergedResult = await prisma.$transaction(async (tx) => {
+      // 1. Create consolidated order
+      const newOrder = await tx.order.create({
+        data: {
+          tableId: targetBill.order.tableId,
+          phone_number: targetBill.phone_number,
+          total: sourceBill.order.total + targetBill.order.total,
+          status: 'PENDING',
+          notes: `Consolidated merge of ${sourceBill.billNumber} and ${targetBill.billNumber}`
+        }
+      });
+
+      // 2. Copy items
+      const allItems = [...sourceBill.order.items, ...targetBill.order.items];
+      for (const item of allItems) {
+        await tx.orderItem.create({
+          data: {
+            orderId: newOrder.id,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            price: item.price,
+            specialInstructions: item.specialInstructions
+          }
+        });
+      }
+
+      // 3. Create the new merged Bill
+      const newBillNumber = await generateBillNumber();
+      const mergedBill = await tx.bill.create({
+        data: {
+          orderId: newOrder.id,
+          phone_number: targetBill.phone_number,
+          subtotal: sourceBill.subtotal + targetBill.subtotal,
+          taxAmount: sourceBill.taxAmount + targetBill.taxAmount,
+          discount: sourceBill.discount + targetBill.discount,
+          total: sourceBill.total + targetBill.total,
+          paymentStatus: 'PENDING',
+          billNumber: newBillNumber,
+          customItems: JSON.stringify([
+            ...JSON.parse(sourceBill.customItems || '[]'),
+            ...JSON.parse(targetBill.customItems || '[]')
+          ])
+        },
+        include: {
+          order: {
+            include: {
+              table: true,
+              items: { include: { menuItem: true } }
+            }
+          }
+        }
+      });
+
+      // 4. Mark originals as Merged
+      await tx.bill.update({
+        where: { id: sourceBill.id },
+        data: {
+          is_merged: true,
+          merged_bill_id: mergedBill.id,
+          paymentStatus: 'MERGED'
+        }
+      });
+
+      await tx.bill.update({
+        where: { id: targetBill.id },
+        data: {
+          is_merged: true,
+          merged_bill_id: mergedBill.id,
+          paymentStatus: 'MERGED'
+        }
+      });
+
+      await tx.order.update({
+        where: { id: sourceBill.orderId },
+        data: { status: 'MERGED' }
+      });
+
+      await tx.order.update({
+        where: { id: targetBill.orderId },
+        data: { status: 'MERGED' }
+      });
+
+      // 5. Merge records and history
+      await tx.mergedBill.create({
+        data: {
+          parent_bill_id: mergedBill.id,
+          child_bill_id: sourceBill.id
+        }
+      });
+      await tx.mergedBill.create({
+        data: {
+          parent_bill_id: mergedBill.id,
+          child_bill_id: targetBill.id
+        }
+      });
+
+      await tx.billMergeHistory.create({
+        data: {
+          parent_bill_id: mergedBill.id,
+          child_bill_id: sourceBill.id,
+          merged_by: waiterUsername,
+          merge_reason: reason || 'Manual Merge'
+        }
+      });
+      await tx.billMergeHistory.create({
+        data: {
+          parent_bill_id: mergedBill.id,
+          child_bill_id: targetBill.id,
+          merged_by: waiterUsername,
+          merge_reason: reason || 'Manual Merge'
+        }
+      });
+
+      // 6. Audit Trail
+      await tx.auditLog.create({
+        data: {
+          audit_action: 'MERGE_BILLS',
+          details: `Waiter ${waiterUsername} manually merged bill ${sourceBill.billNumber} (Table ${sourceBill.order.table.tableNumber}) and bill ${targetBill.billNumber} into new bill ${mergedBill.billNumber}`
+        }
+      });
+
+      // Emit SSE Update
+      eventEmitter.emit('ORDER_UPDATE', {
+        orderId: newOrder.id,
+        status: 'PENDING',
+        tableId: newOrder.tableId,
+        billId: mergedBill.id
+      });
+
+      return mergedBill;
+    });
+
+    return res.json({
+      success: true,
+      message: 'Bills manually merged successfully',
+      mergedBill: mergedResult
+    });
+  } catch (error: any) {
+    console.error('Failed manual merge:', error);
+    return res.status(500).json({ error: error.message || 'Failed manual merge' });
+  }
+}
+
+/**
+ * POST /api/bills/print
+ * Log print action and return bill details.
+ */
+export async function printBill(req: Request, res: Response) {
+  try {
+    const { billId } = req.body;
+    if (!billId) {
+      return res.status(400).json({ error: 'billId is required' });
+    }
+    const bill = await prisma.bill.findUnique({
+      where: { id: billId },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+    if (!bill) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+
+    const authReq = req as AuthenticatedRequest;
+    const waiterUsername = authReq.username || 'unknown';
+    await prisma.auditLog.create({
+      data: {
+        audit_action: 'PRINT_BILL',
+        details: `Bill ${bill.billNumber} printed by ${waiterUsername}`
+      }
+    });
+
+    return res.json({ success: true, bill });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to print bill' });
+  }
+}
+
+/**
+ * POST /api/bills/serve
+ * Mark order as served.
+ */
+export async function serveOrder(req: Request, res: Response) {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { table: true }
+    });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'SERVED' },
+      include: {
+        table: true,
+        items: { include: { menuItem: true } },
+        bill: true
+      }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: orderId,
+      status: 'SERVED',
+      tableId: order.tableId,
+      tableNumber: order.table.tableNumber
+    });
+
+    const authReq = req as AuthenticatedRequest;
+    const waiterUsername = authReq.username || 'unknown';
+    await prisma.auditLog.create({
+      data: {
+        audit_action: 'SERVE_ORDER',
+        details: `Order ${orderId} marked as served by ${waiterUsername}`
+      }
+    });
+
+    return res.json(updatedOrder);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to serve order' });
+  }
+}
+
+/**
+ * GET /api/audit/bill-history
+ * Retrieve bill merge and audit history.
+ */
+export async function getAuditHistory(req: Request, res: Response) {
+  try {
+    const logs = await prisma.auditLog.findMany({
+      orderBy: { audit_timestamp: 'desc' },
+      take: 100
+    });
+    const merges = await prisma.billMergeHistory.findMany({
+      orderBy: { merged_at: 'desc' },
+      take: 100
+    });
+    return res.json({ logs, merges });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch audit history' });
+  }
+}
+
+/**
+ * GET /api/waiter/dashboard-stats
+ * Retrieve real-time dashboard analytics.
+ */
+export async function getDashboardStats(req: Request, res: Response) {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const waiter = await prisma.waiter.findUnique({
+      where: { username: authReq.username }
+    });
+
+    let whereOrder: any = { status: { notIn: ['PAID', 'CANCELLED'] } };
+    let whereBill: any = { createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) } };
+
+    if (authReq.username !== 'admin' && waiter) {
+      whereOrder.table = { assignedWaiterId: waiter.id };
+      whereBill.order = { table: { assignedWaiterId: waiter.id } };
+    }
+
+    // Active Tables
+    const activeTables = await prisma.table.count({
+      where: {
+        orders: {
+          some: { status: { notIn: ['PAID', 'CANCELLED'] } }
+        },
+        ...(authReq.username !== 'admin' && waiter ? { assignedWaiterId: waiter.id } : {})
+      }
+    });
+
+    // Active Customers (distinct phone numbers)
+    const activeOrders = await prisma.order.findMany({
+      where: whereOrder,
+      select: { phone_number: true }
+    });
+    const distinctPhones = new Set(activeOrders.map(o => o.phone_number || 'Guest'));
+    const activeCustomers = distinctPhones.size;
+
+    // Active Bills (unpaid bills)
+    const activeBills = await prisma.bill.count({
+      where: {
+        paymentStatus: 'PENDING',
+        order: {
+          status: { notIn: ['PAID', 'CANCELLED'] },
+          ...(authReq.username !== 'admin' && waiter ? { table: { assignedWaiterId: waiter.id } } : {})
+        }
+      }
+    });
+
+    // Pending Orders (PLACED, ACCEPTED, PREPARING)
+    const pendingOrders = await prisma.order.count({
+      where: {
+        ...whereOrder,
+        status: { in: ['PLACED', 'ACCEPTED', 'PREPARING'] }
+      }
+    });
+
+    // Ready Orders
+    const readyOrders = await prisma.order.count({
+      where: {
+        ...whereOrder,
+        status: 'READY'
+      }
+    });
+
+    // Today's paid bills
+    const todayPaidBills = await prisma.bill.findMany({
+      where: {
+        ...whereBill,
+        paymentStatus: 'PAID'
+      }
+    });
+
+    const todayRevenue = todayPaidBills.reduce((sum, b) => sum + b.total, 0);
+    const todayBillCount = todayPaidBills.length;
+    const averageBillValue = todayBillCount > 0 ? todayRevenue / todayBillCount : 0;
+
+    return res.json({
+      activeTables,
+      activeCustomers,
+      activeBills,
+      pendingOrders,
+      readyOrders,
+      todayRevenue,
+      todayBillCount,
+      averageBillValue
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+}
+
+

@@ -6,7 +6,7 @@ import WaiterOrders from './pages/WaiterOrders';
 import WaiterCompleted from './pages/WaiterCompleted';
 import WaiterMenu from './pages/WaiterMenu';
 import WaiterProfile from './pages/WaiterProfile';
-import WaiterQueue from './pages/WaiterQueue';
+import WaiterDashboard from './pages/WaiterDashboard';
 import Menu from './pages/Menu';
 import Pay from './pages/Pay';
 import Bill from './pages/Bill';
@@ -143,7 +143,7 @@ export default function App() {
         >
           <Route path="/waiter" element={<Navigate to="/waiter/orders" replace />} />
           <Route path="/waiter/orders" element={<WaiterOrders />} />
-          <Route path="/waiter/queue" element={<WaiterQueue />} />
+          <Route path="/waiter/queue" element={<WaiterDashboard />} />
           <Route path="/waiter/completed" element={<WaiterCompleted />} />
           <Route path="/waiter/menu" element={<WaiterMenu />} />
           <Route path="/waiter/profile" element={<WaiterProfile />} />

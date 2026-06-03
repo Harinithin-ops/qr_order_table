@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { fork } from 'child_process';
 
 import { printTotpSetup } from './utils/totp.js';
 
@@ -41,7 +42,15 @@ import {
   createBillWaiter,
   getBillsWaiter,
   addCustomItemToBill,
-  markBillPaid
+  markBillPaid,
+  getTableOrders,
+  getCustomerBills,
+  generateSingleBill,
+  mergeBillsManual,
+  printBill,
+  serveOrder,
+  getAuditHistory,
+  getDashboardStats
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess, getWaiterPerformance } from './controllers/waiters.controller.js';
@@ -129,10 +138,17 @@ app.patch('/api/bills/:id', authMiddleware, adminOnly, updateBill);
 app.delete('/api/bills/:id', authMiddleware, adminOnly, deleteBill);
 app.post('/api/bills/:id/pay', payBill);
 app.post('/api/bills/:id/items', authMiddleware, adminOnly, addExtraItemToBill);
-app.post('/api/bills/merge', authMiddleware, adminOnly, mergeBills);
+app.post('/api/bills/merge', authMiddleware, mergeBillsManual);
+app.get('/api/tables/:tableId/orders', authMiddleware, getTableOrders);
+app.get('/api/customers/:mobile/bills', authMiddleware, getCustomerBills);
+app.post('/api/bills/generate', authMiddleware, generateSingleBill);
+app.post('/api/bills/print', authMiddleware, printBill);
+app.post('/api/bills/serve', authMiddleware, serveOrder);
+app.get('/api/audit/bill-history', authMiddleware, getAuditHistory);
 
 // Bills (Waiter accessible — authMiddleware only, no adminOnly)
 app.get('/api/waiter/bills', authMiddleware, getBillsWaiter);
+app.get('/api/waiter/dashboard-stats', authMiddleware, getDashboardStats);
 app.post('/api/waiter/bills', authMiddleware, createBillWaiter);
 app.post('/api/waiter/bills/:id/custom-item', authMiddleware, addCustomItemToBill);
 app.patch('/api/waiter/bills/:id/pay', authMiddleware, markBillPaid);
@@ -149,15 +165,69 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
 
-// ─── Schema-Sync Migration: Safely add any missing columns to the database ──
+// ─── Schema-Sync Migration: Safely add any missing columns and tables to the database ──
 // This runs raw DDL so the server auto-heals even if prisma db push was skipped.
 const runSchemaSyncMigration = async () => {
   try {
     const { prisma } = await import('./lib/prisma.js');
-    console.log('🔧 Schema-sync: Adding missing columns if not present...');
+    console.log('🔧 Schema-sync: Adding missing columns and tables if not present...');
     await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
-    console.log('✅ Schema-sync: phone_number columns are present in Order and Bill.');
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS is_merged BOOLEAN DEFAULT FALSE;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS merged_bill_id TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS group_id TEXT;`);
+
+    // Create new tables
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS bill_groups (
+        id TEXT PRIMARY KEY,
+        "tableId" TEXT NOT NULL,
+        phone_number TEXT,
+        "createdAt" TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS merged_bills (
+        id TEXT PRIMARY KEY,
+        parent_bill_id TEXT NOT NULL,
+        child_bill_id TEXT NOT NULL,
+        "createdAt" TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS bill_merge_history (
+        merge_id TEXT PRIMARY KEY,
+        parent_bill_id TEXT NOT NULL,
+        child_bill_id TEXT NOT NULL,
+        merged_by TEXT NOT NULL,
+        merged_at TIMESTAMP DEFAULT NOW(),
+        merge_reason TEXT
+      );
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        audit_action TEXT NOT NULL,
+        audit_timestamp TIMESTAMP DEFAULT NOW(),
+        details TEXT
+      );
+    `);
+
+    console.log('✅ Schema-sync: Columns and tables check completed.');
+
+    // Regenerate Prisma client asynchronously
+    const { exec } = await import('child_process');
+    console.log('🔧 Regenerating Prisma Client...');
+    exec('npx prisma generate', { cwd: 'f:\\ertyu\\hotel\\food_order_system\\backend' }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('❌ Failed to regenerate Prisma client:', err);
+      } else {
+        console.log('✅ Prisma client regenerated successfully.');
+      }
+    });
   } catch (err) {
     console.error('⚠️  Schema-sync migration failed (non-fatal):', err);
   }
@@ -448,16 +518,3 @@ export default app;
 
 // Trigger nodemon reload for database schema changes
 // Restarting to flush pgbouncer pooler cache
-
-import { fork } from 'child_process';
-setTimeout(() => {
-  try {
-    fork('f:\\ertyu\\hotel\\food_order_system\\git_cleanup_runner.js');
-  } catch (e: any) {
-    // ignore
-  }
-}, 1000);
-
-
-
-

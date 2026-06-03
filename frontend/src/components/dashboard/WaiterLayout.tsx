@@ -28,7 +28,7 @@ export default function WaiterLayout() {
       const res = await fetch('/api/orders', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        const activeOrders = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED');
+        const activeOrders = data.filter((o: any) => o.status !== 'PAID' && o.status !== 'CANCELLED' && o.status !== 'MERGED');
         setOrdersCount(
           activeOrders.filter((o: any) => o.status === 'PLACED').length
         );
