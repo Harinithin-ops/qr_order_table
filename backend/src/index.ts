@@ -149,7 +149,7 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
 
-} catch (err: any) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message, stderr: err.stderr?.toString(), stdout: err.stdout?.toString() });
   }
 });
