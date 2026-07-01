@@ -1,0 +1,183 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  phone     String
+  gstNumber String?
+  tables    Table[]
+  createdAt DateTime @default(now())
+}
+
+model Table {
+  id               String   @id @default(cuid())
+  tableNumber      Int
+  slug             String   @unique
+  qrCodeUrl        String?
+  branchId         String
+  branch           Branch   @relation(fields: [branchId], references: [id])
+  active           Boolean  @default(true)
+  callingWaiter    Boolean  @default(false)
+  orders           Order[]
+  assignedWaiterId String?
+  assignedWaiter   Waiter?  @relation(fields: [assignedWaiterId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+}
+
+model MenuCategory {
+  id           String     @id @default(cuid())
+  name         String
+  image        String?
+  displayOrder Int        @default(0)
+  items        MenuItem[]
+}
+
+model MenuItem {
+  id               String       @id @default(cuid())
+  name             String
+  description      String
+  price            Float
+  image            String?
+  available        Boolean      @default(true)
+  categoryId       String
+  category         MenuCategory @relation(fields: [categoryId], references: [id])
+  prepTime         Int          @default(15)
+  tags             String       @default("[]")
+  suggestedItemIds String       @default("[]")
+  orderItems       OrderItem[]
+  createdAt        DateTime     @default(now())
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  tableId        String
+  table          Table       @relation(fields: [tableId], references: [id])
+  status         String      @default("PLACED")
+  total          Float
+  notes          String?
+  customerId     String?
+  phone_number   String?
+  customer_email String?
+  items          OrderItem[]
+  bill           Bill?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model OrderItem {
+  id                  String   @id @default(cuid())
+  orderId             String
+  order               Order    @relation(fields: [orderId], references: [id])
+  menuItemId          String
+  menuItem            MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity            Int
+  price               Float
+  specialInstructions String?
+  isUnavailable       Boolean  @default(false)
+}
+
+model Bill {
+  id               String     @id @default(cuid())
+  orderId          String     @unique
+  order            Order      @relation(fields: [orderId], references: [id])
+  phone_number     String?
+  customer_email   String?
+  subtotal         Float
+  taxRate          Float      @default(0.02)
+  taxAmount        Float
+  serviceCharge    Float      @default(0)
+  discount         Float      @default(0)
+  total            Float
+  paymentStatus    String     @default("PENDING")
+  paymentMethod    String?
+  paymentReference String?
+  billNumber       String
+  customItems      String     @default("[]")
+  is_merged        Boolean    @default(false)
+  merged_bill_id   String?
+  group_id         String?
+  billGroup        BillGroup? @relation(fields: [group_id], references: [id])
+  createdAt        DateTime   @default(now())
+}
+
+model BillGroup {
+  id             String   @id @default(cuid())
+  tableId        String
+  phone_number   String?
+  customer_email String?
+  createdAt      DateTime @default(now())
+  bills          Bill[]
+
+  @@map("bill_groups")
+}
+
+model MergedBill {
+  id             String   @id @default(cuid())
+  parent_bill_id String
+  child_bill_id  String
+  createdAt      DateTime @default(now())
+
+  @@map("merged_bills")
+}
+
+model BillMergeHistory {
+  merge_id       String   @id @default(cuid())
+  parent_bill_id String
+  child_bill_id  String
+  merged_by      String
+  merged_at      DateTime @default(now())
+  merge_reason   String?
+
+  @@map("bill_merge_history")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  audit_action    String
+  audit_timestamp DateTime @default(now())
+  details         String?
+
+  @@map("audit_logs")
+}
+
+model Waiter {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String?
+  displayName  String?
+  isDisabled   Boolean  @default(false)
+  tables       Table[]
+  createdAt    DateTime @default(now())
+}
+
+model CustomerSession {
+  id        String   @id @default(uuid())
+  phone     String
+  name      String?
+  email     String?
+  tableId   String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([tableId])
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  role         String
+  token        String   @unique
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  lastActiveAt DateTime @default(now())
+}

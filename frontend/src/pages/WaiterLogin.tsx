@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { HOTEL_NAME } from '@/lib/utils';
 import { Utensils, ArrowLeft, UserCheck, User } from 'lucide-react';
@@ -8,6 +8,27 @@ export default function WaiterLoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const role = localStorage.getItem('userRole');
+      if (token && role === 'waiter') {
+        try {
+          const res = await fetch('/api/auth/check');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.authenticated && data.role === 'waiter') {
+              navigate('/waiter/orders', { replace: true });
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+    };
+    checkAuth();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +43,10 @@ export default function WaiterLoginPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("authToken", data.token);
+        localStorage.setItem("userRole", "waiter");
+        localStorage.setItem("userData", JSON.stringify(data.user || data.waiter));
         navigate('/waiter/orders');
       } else {
         const data = await res.json().catch(() => ({}));
@@ -33,6 +58,7 @@ export default function WaiterLoginPage() {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-amber-50/50 flex flex-col justify-center items-center p-4">

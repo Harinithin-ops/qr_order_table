@@ -45,17 +45,17 @@ export default function CheckoutPage() {
     setLoading(true);
     try {
       const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
-      let phone = null;
+      let email = null;
       if (rawSession) {
         try {
-          phone = JSON.parse(rawSession).phone;
+          email = JSON.parse(rawSession).email;
         } catch {}
       }
 
       const res = await fetch(`/api/tables/${tableId}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -190,6 +190,13 @@ export default function CheckoutPage() {
       </div>
 
       <div className="p-4 space-y-5 flex-1">
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-800 text-xs font-semibold flex items-center gap-2">
+            <AlertTriangle size={16} className="text-red-500 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Step 1: Initiate Checkout */}
         {!bill && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center space-y-4 animate-slide-up">

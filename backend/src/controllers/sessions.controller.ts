@@ -1,83 +1,82 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { randomUUID } from 'crypto';
 
-// Background cleanup helper
+// Background cleanup helper — uses raw SQL to avoid Prisma client schema issues
 async function cleanupExpiredSessions() {
   try {
-    const deleted = await prisma.customerSession.deleteMany({
-      where: {
-        expiresAt: {
-          lt: new Date(),
-        },
-      },
-    });
-    if (deleted.count > 0) {
-      console.log(`🧹 Cleaned up ${deleted.count} expired customer sessions.`);
-    }
+    await prisma.$executeRawUnsafe(`DELETE FROM "CustomerSession" WHERE "expiresAt" < NOW();`);
   } catch (err) {
     console.error('Failed to cleanup expired sessions:', err);
   }
 }
 
-export async function createSession(req: Request, res: Response) {
+/**
+ * POST /api/sessions
+ * Accepts a phone number, name, and table ID, and creates/extends a customer session.
+ * Uses raw SQL to avoid dependency on stale Prisma generated client.
+ */
+export async function createPhoneSession(req: Request, res: Response) {
   try {
-    const { phone, tableId } = req.body;
+    const { phone, tableId, name } = req.body;
 
-    if (!phone || !phone.trim() || !tableId) {
-      return res.status(400).json({ error: 'Mobile number and tableId are required' });
+    if (!phone || !tableId) {
+      return res.status(400).json({ error: 'phone and tableId are required' });
     }
 
-    const trimmedPhone = phone.trim();
-    // Validate phone: numeric digits only, between 7 and 15 digits
-    const phoneRegex = /^[0-9]{7,15}$/;
-    if (!phoneRegex.test(trimmedPhone)) {
-      return res.status(400).json({ error: 'Please enter a valid mobile number (digits only)' });
-    }
+    const cleanedPhone = phone.trim();
+    const cleanedName = name ? name.trim() : 'Guest';
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
     // Trigger cleanup asynchronously
     void cleanupExpiredSessions();
 
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
-
     // Check if an active (non-expired) session already exists for this phone and table
-    const existing = await prisma.customerSession.findFirst({
-      where: {
-        phone: trimmedPhone,
-        tableId,
-        expiresAt: {
-          gt: new Date()
-        }
-      }
-    });
+    const existing = await prisma.$queryRawUnsafe(
+      `SELECT id, phone, name, "tableId", "expiresAt" FROM "CustomerSession"
+       WHERE phone = $1 AND "tableId" = $2 AND "expiresAt" > NOW()
+       LIMIT 1`,
+      cleanedPhone,
+      tableId
+    ) as any[];
 
-    if (existing) {
-      // Extend the existing session's lifespan by another 24 hours and return it (session recovery!)
-      const updated = await prisma.customerSession.update({
-        where: { id: existing.id },
-        data: { expiresAt }
-      });
+    if (existing && existing.length > 0) {
+      const session = existing[0];
+      // Extend the existing session and update name
+      await prisma.$executeRawUnsafe(
+        `UPDATE "CustomerSession" SET "expiresAt" = $1, name = $2 WHERE id = $3`,
+        expiresAt,
+        name ? cleanedName : (session.name || 'Guest'),
+        session.id
+      );
       return res.status(200).json({
-        customerId: updated.id,
-        phone: updated.phone,
-        tableId: updated.tableId,
-        expiresAt: updated.expiresAt,
+        customerId: session.id,
+        phone: session.phone,
+        name: name ? cleanedName : (session.name || 'Guest'),
+        tableId: session.tableId,
+        expiresAt,
       });
     }
 
     // Create a new session
-    const session = await prisma.customerSession.create({
-      data: {
-        phone: trimmedPhone,
-        tableId,
-        expiresAt,
-      },
-    });
+    const newId = randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "CustomerSession" (id, phone, name, "tableId", "createdAt", "expiresAt")
+       VALUES ($1, $2, $3, $4, NOW(), $5)`,
+      newId,
+      cleanedPhone,
+      cleanedName,
+      tableId,
+      expiresAt
+    );
 
     return res.status(201).json({
-      customerId: session.id,
-      phone: session.phone,
-      tableId: session.tableId,
-      expiresAt: session.expiresAt,
+      customerId: newId,
+      phone: cleanedPhone,
+      name: cleanedName,
+      tableId,
+      expiresAt,
     });
   } catch (error) {
     console.error('Failed to create customer session:', error);
@@ -96,33 +95,36 @@ export async function verifySession(req: Request, res: Response) {
     // Trigger cleanup asynchronously
     void cleanupExpiredSessions();
 
-    const session = await prisma.customerSession.findFirst({
-      where: {
-        id: customerId,
-        tableId,
-        expiresAt: {
-          gt: new Date(),
-        },
-      },
-    });
+    // Look up session by id and tableId
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT id, phone, name, "tableId", "expiresAt" FROM "CustomerSession"
+       WHERE id = $1 AND "tableId" = $2 AND "expiresAt" > NOW()
+       LIMIT 1`,
+      customerId,
+      tableId
+    ) as any[];
 
-    if (!session) {
+    if (!rows || rows.length === 0) {
       return res.json({ valid: false });
     }
 
+    const session = rows[0];
+
     // Extend session by another 24 hours
     const extendedExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const updated = await prisma.customerSession.update({
-      where: { id: customerId },
-      data: { expiresAt: extendedExpiresAt },
-    });
+    await prisma.$executeRawUnsafe(
+      `UPDATE "CustomerSession" SET "expiresAt" = $1 WHERE id = $2`,
+      extendedExpiresAt,
+      customerId
+    );
 
     return res.json({
       valid: true,
       session: {
-        customerId: updated.id,
-        phone: updated.phone,
-        tableId: updated.tableId,
+        customerId: session.id,
+        phone: session.phone,
+        name: session.name || 'Guest',
+        tableId: session.tableId,
       },
     });
   } catch (error) {

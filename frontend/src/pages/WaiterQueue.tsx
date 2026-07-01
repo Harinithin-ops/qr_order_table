@@ -256,7 +256,7 @@ function BillModal({
 
             {/* Cash Payment Request Alert */}
             {currentBill && !isPaid && currentBill.paymentStatus === 'AWAITING_CONFIRMATION' && currentBill.paymentMethod === 'CASH' && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-3 shadow-sm animate-pulse">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-3 shadow-sm">
                 <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
                 <div className="text-left text-emerald-800 text-sm font-medium">
                   Cash payment of {fmt(total)} requested. Please verify and confirm.
@@ -554,7 +554,7 @@ function TableGroup({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {hasUnavailable && (
-            <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full animate-pulse flex items-center gap-0.5">
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full flex items-center gap-0.5">
               <AlertCircle size={10} className="text-red-500" /> OUT OF STOCK
             </span>
           )}
@@ -590,7 +590,7 @@ function TableGroup({
                       <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full">PAID</span>
                     )}
                     {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH' && (
-                      <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-full animate-pulse">CASH REQUESTED</span>
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 rounded-full">CASH REQUESTED</span>
                     )}
                     {!isPaid && bill && bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'UPI' && (
                       <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200 rounded-full">UPI SUBMITTED</span>
@@ -625,7 +625,7 @@ function TableGroup({
                       {/* Items */}
                       <div className="space-y-1">
                         {order.items.map(item => (
-                          <div key={item.id} className={`flex justify-between items-center border rounded-xl px-2.5 py-1.5 text-xs ${item.isUnavailable ? 'bg-red-50 border-red-200 text-red-750 font-bold animate-pulse' : 'bg-gray-50 border-gray-105 text-gray-700'}`}>
+                          <div key={item.id} className={`flex justify-between items-center border rounded-xl px-2.5 py-1.5 text-xs ${item.isUnavailable ? 'bg-red-50 border-red-200 text-red-750 font-bold' : 'bg-gray-50 border-gray-105 text-gray-700'}`}>
                             <div className="flex items-center gap-2 min-w-0">
                               <span className={`font-bold px-1 rounded border ${item.isUnavailable ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
                                 {item.quantity}×
@@ -691,7 +691,7 @@ function TableGroup({
                           isPaid
                             ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                             : bill.paymentStatus === 'AWAITING_CONFIRMATION' && bill.paymentMethod === 'CASH'
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 animate-pulse'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
                               : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
                         }`}
                       >
@@ -844,7 +844,7 @@ export default function WaiterQueue() {
 
   return (
     <>
-      <div className="p-3 sm:p-4 md:p-6 animate-slide-up">
+      <div className="p-3 sm:p-4 md:p-6">
         <WaiterAlerts lastEvent={lastEvent} />
 
         {/* Header */}

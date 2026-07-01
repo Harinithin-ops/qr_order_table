@@ -273,7 +273,7 @@ export async function assignTables(req: Request, res: Response) {
     });
 
     // Emit TABLES_UPDATE event to alert SSE clients
-    eventEmitter.emit('TABLES_UPDATE', {});
+    eventEmitter.emit('TABLES_UPDATE', { updated: true });
 
     // Return the updated list of all tables
     const updatedTables = await prisma.table.findMany({

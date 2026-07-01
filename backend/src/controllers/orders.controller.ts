@@ -3,7 +3,6 @@ import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { generateBillNumber, TAX_RATE, getCategoryTimingStatus } from '../lib/utils.js';
 import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
-import { mergeAndGetTableBill } from './bills.controller.js';
 
 async function syncOrderAndBillTotals(orderId: string, tx?: any) {
   const db = tx || prisma;
@@ -89,32 +88,21 @@ export async function createOrder(req: Request, res: Response) {
       }
     }
 
-    // Server-Side same customer-session order merging
+    // Look up customer phone from session for deduplication (using raw SQL to bypass stale Prisma client)
     let phone_number: string | null = null;
+    let customerName: string | null = null;
     if (customerId) {
-      const session = await prisma.customerSession.findUnique({
-        where: { id: customerId }
-      });
-      if (session) {
-        phone_number = session.phone;
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT phone, name FROM "CustomerSession" WHERE id = $1 LIMIT 1`,
+        customerId
+      ) as any[];
+      if (rows && rows.length > 0) {
+        phone_number = rows[0].phone;
+        customerName = rows[0].name;
       }
-    }
-    if (!phone_number && notes) {
-      const match = notes.match(/Phone:\s*([^\s|]+)/i);
-      if (match) {
-        phone_number = match[1].trim();
-      } else {
-        const matchDigits = notes.match(/\b\d{10}\b/);
-        if (matchDigits) {
-          phone_number = matchDigits[0].trim();
-        }
-      }
-    }
-    if (!phone_number && req.body.phone_number) {
-      phone_number = String(req.body.phone_number).trim();
     }
 
-    let existingOrder = null;
+    let existingOrder: any = null;
     if (phone_number) {
       existingOrder = await prisma.order.findFirst({
         where: {
@@ -125,32 +113,12 @@ export async function createOrder(req: Request, res: Response) {
           items: true
         }
       });
-    } else {
-      // Fallback same-name or same-phone matching (case-insensitive) for waiters or legacy endpoints
-      const match = notes ? notes.match(/^(?:Name|Phone):\s*([^|]+)/i) : null;
-      const customerIdentifier = match ? match[1].trim() : null;
-
-      if (customerIdentifier) {
-        const activeOrders = await prisma.order.findMany({
-          where: {
-            tableId: table.id,
-            status: { notIn: ['PAID', 'CANCELLED'] }
-          },
-          include: {
-            items: true
-          }
-        });
-
-        existingOrder = activeOrders.find(o => {
-          const existingNotes = o.notes || '';
-          const m = existingNotes.match(/^(?:Name|Phone):\s*([^|]+)/i);
-          if (m) {
-            return m[1].trim().toLowerCase() === customerIdentifier.toLowerCase();
-          }
-          return false;
-        });
-      }
     }
+
+    let resolvedOrder: any = null;
+    let statusCode = 201;
+
+    existingOrder = null;
 
     if (existingOrder) {
       // Perform order merge inside a transaction
@@ -159,7 +127,7 @@ export async function createOrder(req: Request, res: Response) {
         for (const item of items) {
           // Find duplicate item in existing order with the same special instructions
           const existingItem = existingOrder.items.find(
-            ei => ei.menuItemId === item.menuItemId && 
+            (ei: any) => ei.menuItemId === item.menuItemId && 
                   (ei.specialInstructions || '').trim().toLowerCase() === (item.specialInstructions || '').trim().toLowerCase()
           );
 
@@ -212,7 +180,7 @@ export async function createOrder(req: Request, res: Response) {
 
         // 3. Update order status and tableId if changed
         let newStatus = existingOrder.status;
-        if (['READY', 'SERVED'].includes(existingOrder.status)) {
+        if (['READY', 'SERVED', 'PENDING'].includes(existingOrder.status)) {
           newStatus = 'PLACED';
         }
 
@@ -241,41 +209,46 @@ export async function createOrder(req: Request, res: Response) {
         tableId: mergedOrder.tableId 
       });
 
-      return res.status(200).json(mergedOrder);
-    }
+      resolvedOrder = mergedOrder;
+      statusCode = 200;
+    } else {
+      const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
 
-    const total = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0);
-
-    const order = await prisma.order.create({
-      data: {
-        tableId: table.id,
-        total,
-        notes,
-        customerId: customerId || null,
-        phone_number: phone_number || null,
-        items: {
-          create: items.map((item: any) => ({
-            menuItemId: item.menuItemId,
-            quantity: item.quantity,
-            price: item.price,
-            specialInstructions: item.specialInstructions,
-          })),
-        },
-      },
-      include: {
-        table: true,
-        items: {
-          include: {
-            menuItem: true,
+      const order = await prisma.order.create({
+        data: {
+          tableId: table.id,
+          total,
+          notes: notes ? `${notes} | Name: ${customerName || 'Guest'} | Phone: ${phone_number || ''}`.trim() : `Name: ${customerName || 'Guest'} | Phone: ${phone_number || ''}`,
+          customerId: customerId || null,
+          phone_number: phone_number || null,
+          customer_email: null,
+          items: {
+            create: items.map((item: any) => ({
+              menuItemId: item.menuItemId,
+              quantity: item.quantity,
+              price: item.price,
+              specialInstructions: item.specialInstructions,
+            })),
           },
         },
-      },
-    });
+        include: {
+          table: true,
+          items: {
+            include: {
+              menuItem: true,
+            },
+          },
+        },
+      });
 
-    // Emit event for dashboard
-    eventEmitter.emit('NEW_ORDER', { orderId: order.id, tableId: order.tableId });
+      // Emit event for dashboard
+      eventEmitter.emit('NEW_ORDER', { orderId: order.id, tableId: order.tableId });
 
-    return res.status(201).json(order);
+      resolvedOrder = order;
+      statusCode = 201;
+    }
+
+    return res.status(statusCode).json(resolvedOrder);
   } catch (error) {
     console.error('Failed to create order:', error);
     return res.status(500).json({ error: 'Failed to create order' });
@@ -306,9 +279,23 @@ export async function getOrders(req: Request, res: Response) {
         where: { username: authReq.username }
       });
       if (waiter) {
-        whereClause.table = {
-          assignedWaiterId: waiter.id
-        };
+        if (status === 'completed') {
+          whereClause.table = {
+            assignedWaiterId: waiter.id
+          };
+        } else {
+          whereClause = {
+            OR: [
+              {
+                table: { assignedWaiterId: waiter.id },
+                status: { notIn: ['PAID', 'CANCELLED'] }
+              },
+              {
+                status: 'PLACED'
+              }
+            ]
+          };
+        }
       } else {
         return res.json([]);
       }
@@ -331,8 +318,13 @@ export async function getOrders(req: Request, res: Response) {
     });
 
     return res.json(orders);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch orders:', error);
+    import('fs').then(fs => {
+      import('path').then(path => {
+        fs.writeFileSync(path.join(process.cwd(), 'query_error_log.txt'), `GET_ORDERS FAILED!\nError: ${error.message}\nStack: ${error.stack}\n`);
+      });
+    });
     return res.status(500).json({ error: 'Failed to fetch orders' });
   }
 }
@@ -419,20 +411,47 @@ export async function updateOrderStatus(req: Request, res: Response) {
       return res.status(400).json({ error: 'Status is required' });
     }
 
+    const authReq = req as AuthenticatedRequest;
+    let assignedWaiterId: string | null = null;
+    if (authReq.username && authReq.username !== 'admin') {
+      const waiter = await prisma.waiter.findUnique({
+        where: { username: authReq.username }
+      });
+      if (waiter) {
+        assignedWaiterId = waiter.id;
+      }
+    }
+
+    const orderToUpdate = await prisma.order.findUnique({
+      where: { id },
+      select: { tableId: true }
+    });
+
+    if (orderToUpdate && assignedWaiterId) {
+      await prisma.table.update({
+        where: { id: orderToUpdate.tableId },
+        data: { assignedWaiterId }
+      });
+      eventEmitter.emit('TABLES_UPDATE', { updated: true });
+    }
+
     const order = await prisma.order.update({
       where: { id },
       data: { status },
-      select: {
-        id: true,
-        status: true,
-        tableId: true,
+      include: {
+        table: true,
+        items: { include: { menuItem: true } },
+        bill: true
       }
     });
 
     // Notify customer
     eventEmitter.emit('ORDER_UPDATE', { orderId: order.id, status: order.status, tableId: order.tableId });
 
-    return res.json(order);
+    let finalOrder = order;
+    // Auto-merging on SERVED has been disabled.
+    
+    return res.json(finalOrder);
   } catch (error) {
     console.error('Failed to update order status:', error);
     return res.status(500).json({ error: 'Failed to update status' });
@@ -476,16 +495,24 @@ export async function markReceived(req: Request, res: Response) {
     const updated = await prisma.order.update({
       where: { id: orderId },
       data: { status: 'SERVED' },
-      select: { id: true, status: true, tableId: true },
+      include: {
+        table: true,
+        items: { include: { menuItem: true } },
+        bill: true
+      }
     });
 
     eventEmitter.emit('ORDER_UPDATE', {
       orderId: updated.id,
       status: updated.status,
       tableId: updated.tableId,
+      tableNumber: updated.table.tableNumber
     });
 
-    return res.json(updated);
+    let finalOrder = updated;
+    // Auto-merging on SERVED has been disabled.
+    
+    return res.json(finalOrder);
   } catch (error) {
     console.error('Failed to mark received:', error);
     return res.status(500).json({ error: 'Failed to update order' });
@@ -504,7 +531,50 @@ export async function generateBillForOrder(req: Request, res: Response) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const bill = await mergeAndGetTableBill(order.tableId);
+    // Retrieve or generate single bill
+    const existingBill = await prisma.bill.findFirst({
+      where: { orderId: order.id }
+    });
+    if (existingBill) {
+      return res.json(existingBill);
+    }
+
+    const subtotal = order.total;
+    const taxAmount = subtotal * TAX_RATE;
+    const total = subtotal + taxAmount;
+
+    const bill = await prisma.bill.create({
+      data: {
+        orderId: order.id,
+        phone_number: order.phone_number,
+        customer_email: order.customer_email,
+        subtotal,
+        taxAmount,
+        total,
+        billNumber: await generateBillNumber(),
+      },
+      include: {
+        order: {
+          include: {
+            table: true,
+            items: { include: { menuItem: true } }
+          }
+        }
+      }
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { status: 'PENDING' }
+    });
+
+    eventEmitter.emit('ORDER_UPDATE', {
+      orderId: order.id,
+      status: 'PENDING',
+      tableId: order.tableId,
+      billId: bill.id,
+    });
+
     return res.json(bill);
   } catch (error: any) {
     console.error('Failed to generate customer bill:', error);
@@ -1009,9 +1079,11 @@ export async function getActiveOrdersByCustomer(req: Request, res: Response) {
       return res.status(400).json({ error: 'customerId is required' });
     }
 
-    const session = await prisma.customerSession.findUnique({
-      where: { id: String(customerId) }
-    });
+    // Use raw SQL to look up session to avoid stale Prisma generated client
+    const sessionRows = await prisma.$queryRawUnsafe(
+      `SELECT phone FROM "CustomerSession" WHERE id = $1 LIMIT 1`,
+      String(customerId)
+    ) as any[];
 
     let whereClause: any = {
       status: {
@@ -1019,8 +1091,9 @@ export async function getActiveOrdersByCustomer(req: Request, res: Response) {
       }
     };
 
-    if (session) {
-      whereClause.phone_number = session.phone;
+    if (sessionRows && sessionRows.length > 0 && sessionRows[0].phone) {
+      // Prefer phone-based lookup
+      whereClause.phone_number = sessionRows[0].phone;
     } else {
       whereClause.customerId = String(customerId);
     }

@@ -33,21 +33,32 @@ function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   useEffect(() => {
     const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const role = localStorage.getItem('userRole');
+      
+      if (!token || role !== 'waiter') {
+        setStatus('unauthenticated');
+        return;
+      }
+
       try {
-        const res = await fetch('/api/auth/check', {
-          credentials: 'include'
-        });
+        const res = await fetch('/api/auth/check');
         if (res.ok) {
           const data = await res.json();
           if (!data.authenticated) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userData');
             setStatus('unauthenticated');
-          } else if (data.username === 'admin') {
-            // Admin is logged in — redirect them away from the waiter portal
+          } else if (data.role === 'admin' || data.username === 'admin') {
             setStatus('admin');
           } else {
             setStatus('waiter');
           }
         } else {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('userData');
           setStatus('unauthenticated');
         }
       } catch (err) {
@@ -79,21 +90,32 @@ function AdminRoute({ children }: AdminRouteProps) {
 
   useEffect(() => {
     const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const role = localStorage.getItem('userRole');
+      
+      if (!token || role !== 'admin') {
+        setStatus('unauthenticated');
+        return;
+      }
+
       try {
-        const res = await fetch('/api/auth/check', {
-          credentials: 'include'
-        });
+        const res = await fetch('/api/auth/check');
         if (res.ok) {
           const data = await res.json();
           if (!data.authenticated) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userData');
             setStatus('unauthenticated');
-          } else if (data.username === 'admin') {
+          } else if (data.role === 'admin' || data.username === 'admin') {
             setStatus('admin');
           } else {
-            // A waiter is logged in — redirect them to their own dashboard
             setStatus('waiter');
           }
         } else {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('userData');
           setStatus('unauthenticated');
         }
       } catch (err) {

@@ -62,16 +62,16 @@ export default function AdminLayout() {
 
   const handleLogout = async () => {
     try {
-      const res = await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include'
+      await fetch('/api/auth/logout', {
+        method: 'POST'
       });
-      if (res.ok) {
-        navigate('/login');
-      }
     } catch (err) {
       console.error('Logout failed:', err);
     }
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userData');
+    navigate('/login');
   };
 
   const navItems = [

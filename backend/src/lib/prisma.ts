@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/index.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 
@@ -20,8 +20,8 @@ function createPrismaClient(): PrismaClient {
   if (!globalForPrisma.pgPool) {
     globalForPrisma.pgPool = new pg.Pool({
       connectionString,
-      // Keep at most 2 connections — prevents EMAXCONNSESSION (Supabase session mode limit = 15)
-      max: 2,
+      // Keep at most 10 connections — prevents EMAXCONNSESSION (Supabase session mode limit = 15)
+      max: 10,
       min: 0,
       idleTimeoutMillis: 5000,       // release idle connections quickly on nodemon restart
       connectionTimeoutMillis: 10000,

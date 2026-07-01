@@ -54,7 +54,7 @@ import {
 } from './controllers/bills.controller.js';
 import { getEvents } from './controllers/events.controller.js';
 import { getWaiters, createWaiter, deleteWaiter, resetWaiterPassword, renameWaiter, toggleWaiterAccess, getWaiterPerformance } from './controllers/waiters.controller.js';
-import { createSession, verifySession } from './controllers/sessions.controller.js';
+import { createPhoneSession, verifySession } from './controllers/sessions.controller.js';
 
 // Middleware
 import { authMiddleware, adminOnly } from './middleware/auth.middleware.js';
@@ -112,7 +112,7 @@ app.delete('/api/tables/:id/call-waiter', dismissWaiter);
 app.get('/api/qr/:id', getTableQR);
 
 // Sessions
-app.post('/api/sessions', createSession);
+app.post('/api/sessions', createPhoneSession);
 app.post('/api/sessions/verify', verifySession);
 
 // Orders
@@ -172,10 +172,19 @@ const runSchemaSyncMigration = async () => {
     const { prisma } = await import('./lib/prisma.js');
     console.log('🔧 Schema-sync: Adding missing columns and tables if not present...');
     await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS customer_email TEXT;`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS phone_number TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS customer_email TEXT;`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS is_merged BOOLEAN DEFAULT FALSE;`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS merged_bill_id TEXT;`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "Bill"  ADD COLUMN IF NOT EXISTS group_id TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomerSession" ADD COLUMN IF NOT EXISTS email TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomerSession" ADD COLUMN IF NOT EXISTS name TEXT;`);
+    // Add phone column for restored phone-based login
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomerSession" ADD COLUMN IF NOT EXISTS phone TEXT;`);
+    // Make old NOT NULL constraints nullable for transition safety
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomerSession" ALTER COLUMN phone DROP NOT NULL;`).catch(() => {});
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomerSession" ALTER COLUMN email DROP NOT NULL;`).catch(() => {});
 
     // Create new tables
     await prisma.$executeRawUnsafe(`
@@ -183,6 +192,7 @@ const runSchemaSyncMigration = async () => {
         id TEXT PRIMARY KEY,
         "tableId" TEXT NOT NULL,
         phone_number TEXT,
+        customer_email TEXT,
         "createdAt" TIMESTAMP DEFAULT NOW()
       );
     `);
@@ -213,6 +223,18 @@ const runSchemaSyncMigration = async () => {
         audit_action TEXT NOT NULL,
         audit_timestamp TIMESTAMP DEFAULT NOW(),
         details TEXT
+      );
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "UserSession" (
+        id TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        role TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+        "expiresAt" TIMESTAMP NOT NULL,
+        "lastActiveAt" TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
 
@@ -323,6 +345,18 @@ const runAutoCleanup = async () => {
       });
       console.log(`🧹 Auto-cleanup: removed ${billIds.length + orderIdsWithoutBills.length} record(s) older than 2 days.`);
     }
+
+    // Clean up expired user sessions
+    try {
+      const deletedSessions = await prisma.$executeRawUnsafe(`
+        DELETE FROM "UserSession" WHERE "expiresAt" < NOW();
+      `);
+      if (deletedSessions > 0) {
+        console.log(`🧹 Auto-cleanup: removed ${deletedSessions} expired user session(s).`);
+      }
+    } catch (sessionCleanupErr) {
+      // Non-fatal session cleanup failure
+    }
   } catch (err) {
     console.error('Auto-cleanup failed:', err);
   }
@@ -382,76 +416,49 @@ const runStartersMigration = async () => {
 };
 runStartersMigration();
 
-// Backfill Migration: Automatically parse and backfill phone_number for any existing active orders/bills that have phone number in their notes or sessions
-const runPhoneBackfillMigration = async () => {
+// Email Backfill Migration: Populate customer_email on existing orders that have a customerId session
+const runEmailBackfillMigration = async () => {
   try {
     const { prisma } = await import('./lib/prisma.js');
-    
-    // Find all orders where phone_number is null
-    const ordersWithNullPhone = await prisma.order.findMany({
+
+    // Find orders that have a customerId but no customer_email yet
+    const ordersToBackfill = await prisma.order.findMany({
       where: {
-        phone_number: null,
+        customerId: { not: null },
+        customer_email: null,
       },
-      include: {
-        bill: true,
-      }
+      include: { bill: true },
     });
-    
-    if (ordersWithNullPhone.length > 0) {
-      console.log(`[Phone Migration] Found ${ordersWithNullPhone.length} orders with null phone_number. Attempting to backfill...`);
-      
-      for (const order of ordersWithNullPhone) {
-        let phone: string | null = null;
-        
-        // 1. Try resolving phone from customerId session
-        if (order.customerId) {
+
+    if (ordersToBackfill.length > 0) {
+      console.log(`[Email Migration] Found ${ordersToBackfill.length} orders to backfill customer_email.`);
+      for (const order of ordersToBackfill) {
+        if (!order.customerId) continue;
+        try {
           const session = await prisma.customerSession.findUnique({
             where: { id: order.customerId }
           });
-          if (session && session.phone) {
-            phone = session.phone.trim();
-          }
-        }
-        
-        // 2. Try parsing phone from notes with prefix
-        if (!phone && order.notes) {
-          const match = order.notes.match(/Phone:\s*([^\s|]+)/i);
-          if (match) {
-            phone = match[1].trim();
-          }
-        }
-        
-        // 3. Try parsing any 10-digit number from notes as fallback
-        if (!phone && order.notes) {
-          const matchDigits = order.notes.match(/\b\d{10}\b/);
-          if (matchDigits) {
-            phone = matchDigits[0].trim();
-          }
-        }
-        
-        // Update if resolved
-        if (phone) {
-          console.log(`[Phone Migration] Backfilling order ${order.id} with phone_number: ${phone}`);
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { phone_number: phone }
-          });
-          
-          if (order.bill && !order.bill.phone_number) {
-            await prisma.bill.update({
-              where: { id: order.bill.id },
-              data: { phone_number: phone }
+          if (session && session.email) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { customer_email: session.email }
             });
-            console.log(`[Phone Migration] Backfilling bill ${order.bill.id} with phone_number: ${phone}`);
+            if (order.bill && !order.bill.customer_email) {
+              await prisma.bill.update({
+                where: { id: order.bill.id },
+                data: { customer_email: session.email }
+              });
+            }
           }
-        }
+        } catch {}
       }
+      console.log('[Email Migration] Backfill completed.');
     }
   } catch (err) {
-    console.error('[Phone Migration] Error during backfill:', err);
+    console.error('[Email Migration] Error during backfill:', err);
   }
 };
-runPhoneBackfillMigration();
+runEmailBackfillMigration();
 
 // DDL & Resequence Migration: Automatically drops the unique constraint on billNumber and re-indexes all bills daily-resetting starting from 0001
 const runResequenceMigration = async () => {
@@ -518,3 +525,7 @@ export default app;
 
 // Trigger nodemon reload for database schema changes
 // Restarting to flush pgbouncer pooler cache
+// Force restart to trigger git push script
+// Reload to apply latest bills.controller.ts deleteMany fix
+// Reload to apply latest UserSession and JWT auth additions
+

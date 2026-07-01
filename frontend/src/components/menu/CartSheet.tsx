@@ -48,19 +48,7 @@ export function CartSheet({ tableId, isOpen, onClose, onOrderPlaced, menuItems, 
           tableId,
           items,
           customerId: customerId || undefined,
-          notes: (() => {
-            const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
-            let customerPhone = null;
-            if (rawSession) {
-              try {
-                customerPhone = JSON.parse(rawSession).phone;
-              } catch {}
-            }
-            if (customerPhone) {
-              return `Phone: ${customerPhone}${notes ? ` | Notes: ${notes}` : ''}`;
-            }
-            return notes || undefined;
-          })(),
+          notes: notes || undefined,
         }),
       });
 

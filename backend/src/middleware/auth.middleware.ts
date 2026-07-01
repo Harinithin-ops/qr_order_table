@@ -1,64 +1,85 @@
 import { Request, Response, NextFunction } from 'express';
+import { verifyJwt, generateJwt } from '../utils/jwt.js';
+import { prisma } from '../lib/prisma.js';
 
 const AUTH_COOKIE_NAME = 'kh_admin_token';
-const AUTH_TOKEN_SECRET = process.env.AUTH_SECRET || 'kavitha-hotel-secret-key-change-in-production';
 
 export interface AuthenticatedRequest extends Request {
   username?: string;
+  userRole?: string;
 }
 
-function validateToken(token: string): boolean {
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const parts = decoded.split(':');
-    if (parts.length < 3) return false;
-    // Check that it contains our secret
-    if (parts[2] !== AUTH_TOKEN_SECRET) return false;
+export async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  let token = req.cookies[AUTH_COOKIE_NAME];
+  const authHeader = req.headers['authorization'] || req.headers.authorization;
+  
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  }
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
 
-    // Enforce 12-hour expiration for admin
-    if (parts[0] === 'admin') {
-      const timestamp = parseInt(parts[1], 10);
-      if (isNaN(timestamp)) return false;
-      const twelveHoursMs = 12 * 60 * 60 * 1000;
-      if (Date.now() - timestamp > twelveHoursMs) {
-        return false;
-      }
+  const payload = verifyJwt(token);
+  if (!payload) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  }
+
+  try {
+    // Check if session exists in the database
+    const session = await (prisma as any).userSession.findUnique({
+      where: { token }
+    });
+
+    if (!session) {
+      return res.status(401).json({ error: 'Unauthorized: Session has been logged out' });
     }
 
-    return true;
-  } catch {
-    return false;
-  }
-}
+    // Check if session expired
+    if (new Date() >= new Date(session.expiresAt)) {
+      // Clean up expired session
+      await (prisma as any).userSession.delete({ where: { id: session.id } }).catch(() => {});
+      return res.status(401).json({ error: 'Unauthorized: Session expired' });
+    }
 
-export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const token = req.cookies[AUTH_COOKIE_NAME];
-  
-  if (!token || !validateToken(token)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+    // Update lastActiveAt periodically (e.g. if it was updated more than 5 minutes ago)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    if (new Date(session.lastActiveAt) < fiveMinutesAgo) {
+      await (prisma as any).userSession.update({
+        where: { id: session.id },
+        data: { lastActiveAt: new Date() }
+      }).catch(() => {});
+    }
 
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const parts = decoded.split(':');
-    req.username = parts[0];
-  } catch {
-    // Ignore
+    req.username = payload.username;
+    req.userRole = payload.role;
+  } catch (err) {
+    console.error('Session validation error:', err);
+    return res.status(401).json({ error: 'Unauthorized: Session validation failed' });
   }
 
   next();
 }
 
 export function adminOnly(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (req.username !== 'admin') {
+  if (req.userRole !== 'admin' && req.username !== 'admin') {
     return res.status(403).json({ error: 'Forbidden: Admin access required' });
   }
   next();
 }
 
+export function waiterOnly(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (req.userRole !== 'waiter') {
+    return res.status(403).json({ error: 'Forbidden: Waiter access required' });
+  }
+  next();
+}
+
 export function generateToken(username: string): string {
-  const payload = `${username}:${Date.now()}:${AUTH_TOKEN_SECRET}`;
-  return Buffer.from(payload).toString('base64');
+  // Legacy support just in case, using our internal utility
+  return generateJwt({ username, role: username === 'admin' ? 'admin' : 'waiter' });
 }
 
 export { AUTH_COOKIE_NAME };
+

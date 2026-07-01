@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { HOTEL_NAME } from '@/lib/utils';
 import { Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
@@ -13,6 +13,27 @@ export default function LoginPage() {
   const [otpCode, setOtpCode] = useState('');
   
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const role = localStorage.getItem('userRole');
+      if (token && role === 'admin') {
+        try {
+          const res = await fetch('/api/auth/check');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.authenticated && data.role === 'admin') {
+              navigate('/dashboard', { replace: true });
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+    };
+    checkAuth();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,9 +79,13 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("authToken", data.token);
+        localStorage.setItem("userRole", "admin");
+        localStorage.setItem("userData", JSON.stringify(data.user || data.admin));
         navigate('/dashboard');
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setError(data.error || 'Invalid or expired verification code');
       }
     } catch (err) {

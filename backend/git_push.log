@@ -1,0 +1,39 @@
+[2026-06-03T05:44:38.473Z] Script started
+[2026-06-03T05:44:39.477Z] Cleaned index.ts: successfully removed exec route
+[2026-06-03T05:44:39.478Z] Staging files...
+[2026-06-03T05:44:39.581Z] Staged files successfully
+[2026-06-03T05:44:39.582Z] Committing...
+[2026-06-03T05:44:39.776Z] Commit output: [main 862bff0] Clean up temporary execution endpoints and helper scripts
+ 2 files changed, 3 insertions(+), 7 deletions(-)
+
+[2026-06-03T05:44:39.777Z] Pushing...
+[2026-06-03T05:50:24.823Z] Script started
+[2026-06-03T05:50:25.833Z] Cleaned index.ts: successfully removed exec route
+[2026-06-03T05:50:25.833Z] Staging files...
+[2026-06-03T05:50:25.921Z] Staged files successfully
+[2026-06-03T05:50:25.922Z] Committing...
+[2026-06-03T05:50:26.025Z] Error: Command failed: git commit -m "Clean up development API endpoints and release version 1.0.4"
+Stack: Error: Command failed: git commit -m "Clean up development API endpoints and release version 1.0.4"
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at checkExecSyncError (node:child_process:925:11)
+    at execSync (node:child_process:997:15)
+    at Timeout._onTimeout (F:\ertyu\hotel\food_order_system\backend\git_push_clean.js:45:26)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+Stdout: On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	backend/git_push.log
+	backend/git_push_clean.js
+	backend/src/git_helper.ts
+	backend/src/inspect_db.ts
+	frontend/android/
+	frontend/capacitor.config.ts
+	mobile/
+
+nothing added to commit but untracked files present (use "git add" to track)
+
+Stderr: 

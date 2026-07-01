@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { AuthenticatedRequest, generateToken, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
+import { AuthenticatedRequest, AUTH_COOKIE_NAME } from '../middleware/auth.middleware.js';
 import { verifyTotp, generateCurrentTotp } from '../utils/totp.js';
 import { prisma } from '../lib/prisma.js';
+import { generateJwt } from '../utils/jwt.js';
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 
@@ -45,20 +46,40 @@ export async function login(req: Request, res: Response) {
       return res.status(403).json({ error: 'Your account has been temporarily disabled. Please contact the admin.' });
     }
 
-    const token = generateToken(waiter.username);
+    const token = generateJwt({ id: waiter.id, username: waiter.username, role: 'waiter' });
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    
+    // Create session in the database
+    await (prisma as any).userSession.create({
+      data: {
+        userId: waiter.id,
+        role: 'waiter',
+        token,
+        expiresAt
+      }
+    });
     
     res.cookie(AUTH_COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
     return res.json({ 
       success: true, 
-      role: 'server', 
-      username: waiter.username
+      token,
+      role: 'waiter', 
+      username: waiter.username,
+      user: {
+        id: waiter.id,
+        name: waiter.displayName || waiter.username
+      },
+      waiter: {
+        id: waiter.id,
+        name: waiter.displayName || waiter.username
+      }
     });
   } catch (err) {
     console.error('Waiter login error:', err);
@@ -77,30 +98,79 @@ export async function verifyOtp(req: Request, res: Response) {
   const verified = verifyTotp(code);
 
   if (verified) {
-    const token = generateToken('admin');
+    const token = generateJwt({ id: 'admin', username: 'admin', role: 'admin' });
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    // Create session in the database
+    await (prisma as any).userSession.create({
+      data: {
+        userId: 'admin',
+        role: 'admin',
+        token,
+        expiresAt
+      }
+    });
     
     res.cookie(AUTH_COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 12 * 60 * 60 * 1000 // 12 hours
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
 
-    return res.json({ success: true, role: 'admin' });
+    return res.json({ 
+      success: true, 
+      token,
+      role: 'admin',
+      user: {
+        id: 'admin',
+        name: 'Admin Name'
+      },
+      admin: {
+        id: 'admin',
+        name: 'Admin Name'
+      }
+    });
   }
 
   return res.status(401).json({ error: 'Invalid or expired verification code' });
 }
 
-export function logout(req: Request, res: Response) {
+export async function logout(req: Request, res: Response) {
+  let token = req.cookies[AUTH_COOKIE_NAME];
+  const authHeader = req.headers['authorization'] || req.headers.authorization;
+  
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  }
+
+  if (token) {
+    try {
+      await (prisma as any).userSession.deleteMany({
+        where: { token }
+      });
+    } catch (err) {
+      console.error('Failed to delete session on logout:', err);
+    }
+  }
+
   res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
   return res.json({ success: true });
 }
 
 export function checkAuth(req: AuthenticatedRequest, res: Response) {
-  return res.json({ authenticated: true, username: req.username });
+  return res.json({ 
+    authenticated: true, 
+    username: req.username,
+    role: req.userRole,
+    user: {
+      id: req.username,
+      name: req.username === 'admin' ? 'Admin Name' : req.username
+    }
+  });
 }
+
 
 export async function getMe(req: AuthenticatedRequest, res: Response) {
   try {

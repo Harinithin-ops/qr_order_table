@@ -1,0 +1,128 @@
+2026-06-12T13:45:19.381Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T13:45:21.066Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T13:45:21.066Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T13:45:21.067Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T13:45:22.434Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 2
+2026-06-12T13:45:22.435Z - mergeAndGetCustomerBill final orders count: 2
+2026-06-12T13:45:25.954Z - tableCheckout exception - message: Cannot read properties of undefined (reading 'tableId'), stack: TypeError: Cannot read properties of undefined (reading 'tableId')
+    at <anonymous> (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:250:34)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Proxy._transactionWithCallback (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:79:4800)
+    at async mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:201:22)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:798:18)
+2026-06-12T13:47:26.716Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T13:47:26.868Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T13:47:26.869Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T13:47:26.872Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T13:47:27.053Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T13:47:27.148Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 2
+2026-06-12T13:47:27.149Z - mergeAndGetCustomerBill final orders count: 2
+2026-06-12T13:47:27.317Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T13:47:27.318Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T13:47:27.318Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T13:47:27.724Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 2
+2026-06-12T13:47:27.725Z - mergeAndGetCustomerBill final orders count: 2
+2026-06-12T13:47:29.804Z - tableCheckout success - generated bill: cmqaz3qdk0004c4uuj3h3ddyq
+2026-06-12T13:47:30.200Z - tableCheckout exception - message: 
+Invalid `tx.bill.delete()` invocation in
+F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:210:21
+
+  207 });
+  208 
+  209 // Delete source bill and order
+→ 210 await tx.bill.delete(
+An operation failed because it depends on one or more records that were required but not found. No record was found for a delete., stack: PrismaClientKnownRequestError: 
+Invalid `tx.bill.delete()` invocation in
+F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:210:21
+
+  207 });
+  208 
+  209 // Delete source bill and order
+→ 210 await tx.bill.delete(
+An operation failed because it depends on one or more records that were required but not found. No record was found for a delete.
+    at zr.handleRequestError (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:8286)
+    at zr.handleAndLogRequestError (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:7581)
+    at zr.request (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:7288)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async a (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:79:6862)
+    at async <anonymous> (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:210:7)
+    at async Proxy._transactionWithCallback (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:79:4800)
+    at async mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:201:22)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:804:18)
+2026-06-12T13:57:05.339Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T13:57:05.353Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T13:57:05.510Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T13:57:05.515Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T13:57:05.518Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T13:57:05.901Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 2
+2026-06-12T13:57:05.903Z - mergeAndGetCustomerBill final orders count: 2
+2026-06-12T13:57:07.008Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T13:57:07.010Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T13:57:07.013Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T13:57:07.423Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 2
+2026-06-12T13:57:07.427Z - mergeAndGetCustomerBill final orders count: 2
+2026-06-12T13:57:09.570Z - tableCheckout success - generated bill: cmqaz3qdk0004c4uuj3h3ddyq
+2026-06-12T13:57:10.126Z - tableCheckout exception - message: 
+Invalid `tx.bill.delete()` invocation in
+F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:217:21
+
+  214 });
+  215 
+  216 // Delete source bill and order
+→ 217 await tx.bill.delete(
+An operation failed because it depends on one or more records that were required but not found. No record was found for a delete., stack: PrismaClientKnownRequestError: 
+Invalid `tx.bill.delete()` invocation in
+F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:217:21
+
+  214 });
+  215 
+  216 // Delete source bill and order
+→ 217 await tx.bill.delete(
+An operation failed because it depends on one or more records that were required but not found. No record was found for a delete.
+    at zr.handleRequestError (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:8286)
+    at zr.handleAndLogRequestError (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:7581)
+    at zr.request (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:69:7288)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async a (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:79:6862)
+    at async <anonymous> (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:217:7)
+    at async Proxy._transactionWithCallback (F:\ertyu\hotel\food_order_system\backend\src\generated\prisma\runtime\client.js:79:4800)
+    at async mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:201:22)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:811:18)
+2026-06-12T14:11:18.358Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T14:11:18.381Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T14:11:19.842Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T14:11:19.844Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T14:11:19.851Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T14:11:19.869Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T14:11:19.870Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T14:11:19.872Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T14:11:21.227Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 0
+2026-06-12T14:11:21.430Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 0
+2026-06-12T14:11:21.531Z - mergeAndGetCustomerBill fallback guest resolvedTableId: cmpwmf92v0001zguu6aha992x found orders: 0
+2026-06-12T14:11:21.533Z - mergeAndGetCustomerBill final orders count: 0
+2026-06-12T14:11:21.536Z - mergeAndGetCustomerBill error - orders count is 0
+2026-06-12T14:11:21.555Z - tableCheckout exception - message: Failed to generate bills, stack: Error: Failed to generate bills
+    at mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:124:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:855:18)
+2026-06-12T14:11:21.853Z - mergeAndGetCustomerBill fallback guest resolvedTableId: cmpwmf92v0001zguu6aha992x found orders: 0
+2026-06-12T14:11:21.855Z - mergeAndGetCustomerBill final orders count: 0
+2026-06-12T14:11:21.857Z - mergeAndGetCustomerBill error - orders count is 0
+2026-06-12T14:11:21.860Z - tableCheckout exception - message: Failed to generate bills, stack: Error: Failed to generate bills
+    at mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:124:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:855:18)
+2026-06-12T14:20:42.825Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T14:20:42.849Z - tableCheckout start - tableId: table-1, email: hariraj1389@gmail.com, phone: undefined
+2026-06-12T14:20:43.086Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T14:20:43.089Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T14:20:43.092Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T14:20:43.103Z - tableCheckout table found - id: cmpwmf92v0001zguu6aha992x
+2026-06-12T14:20:43.105Z - tableCheckout calling mergeAndGetCustomerBill - email: hariraj1389@gmail.com, phone: null
+2026-06-12T14:20:43.107Z - mergeAndGetCustomerBill start - phone: null, tableId: cmpwmf92v0001zguu6aha992x, targetOrderId: undefined, email: hariraj1389@gmail.com
+2026-06-12T14:20:43.612Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 1
+2026-06-12T14:20:43.613Z - mergeAndGetCustomerBill final orders count: 1
+2026-06-12T14:20:43.622Z - mergeAndGetCustomerBill cleanEmail: hariraj1389@gmail.com found orders: 1
+2026-06-12T14:20:43.640Z - mergeAndGetCustomerBill final orders count: 1
+2026-06-12T14:20:45.132Z - tableCheckout success - generated bill: cmqb0kgy40003q0uunb7ym888
+2026-06-12T14:20:45.136Z - tableCheckout success - generated bill: cmqb0kgy40003q0uunb7ym888

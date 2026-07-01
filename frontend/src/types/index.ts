@@ -52,6 +52,7 @@ export interface OrderWithItems {
     id: string;
     tableNumber: number;
     slug: string;
+    assignedWaiterId?: string | null;
   };
   items: {
     id: string;

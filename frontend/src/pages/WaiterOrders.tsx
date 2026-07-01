@@ -48,12 +48,14 @@ function WaiterOrderCard({
   onUpdateStatus,
   onEditOrder,
   completing,
+  updating,
 }: {
   order: OrderWithItems;
   onMarkComplete: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
   onEditOrder: (order: OrderWithItems) => void;
   completing: boolean;
+  updating: boolean;
 }) {
   const meta = STATUS_META[order.status] || STATUS_META['PLACED'];
   const Icon = meta.icon;
@@ -122,7 +124,7 @@ function WaiterOrderCard({
         <div className="px-4 pb-3">
           <button
             onClick={() => onMarkComplete(order.id)}
-            disabled={completing}
+            disabled={completing || updating}
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold rounded-xl shadow-md shadow-emerald-200 transition-all text-sm disabled:opacity-60"
           >
             {completing ? (
@@ -150,7 +152,8 @@ function WaiterOrderCard({
           {order.status !== 'PAID' && order.status !== 'CANCELLED' && (
             <button
               onClick={() => onEditOrder(order)}
-              className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-lg transition shrink-0 flex items-center gap-1 border border-amber-200"
+              disabled={updating || completing}
+              className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-lg transition shrink-0 flex items-center gap-1 border border-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Edit Items
             </button>
@@ -160,9 +163,10 @@ function WaiterOrderCard({
           {!canMarkComplete && nextStatus && order.status !== 'PAID' && (
             <button
               onClick={() => onUpdateStatus(order.id, nextStatus)}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition shrink-0"
+              disabled={updating || completing}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition shrink-0 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
             >
-              Mark {nextStatus}
+              {updating ? 'Updating…' : nextStatus === 'ACCEPTED' ? 'Accept Order' : `Mark ${nextStatus}`}
             </button>
           )}
 
@@ -196,6 +200,7 @@ export default function WaiterOrders() {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [paymentNotice, setPaymentNotice] = useState<{ tableNumber: number | null; method: string | null } | null>(null);
   const { lastEvent } = useEventSource('/api/events');
 
@@ -363,6 +368,7 @@ export default function WaiterOrders() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: editItems }),
+        credentials: 'include'
       });
       if (res.ok) {
         setSelectedOrderForEdit(null);
@@ -516,6 +522,8 @@ export default function WaiterOrders() {
 
   /** Advance order to any status */
   const handleUpdateStatus = async (orderId: string, status: string) => {
+    if (updatingOrderId) return;
+    setUpdatingOrderId(orderId);
     setOrders(curr => curr.map(o => o.id === orderId ? { ...o, status: status as any } : o));
     try {
       await fetch(`/api/orders/${orderId}/status`, {
@@ -527,6 +535,8 @@ export default function WaiterOrders() {
     } catch (e) {
       console.error(e);
       fetchOrders();
+    } finally {
+      setUpdatingOrderId(null);
     }
   };
 
@@ -558,10 +568,10 @@ export default function WaiterOrders() {
     );
   }
 
-  // Filter active live orders by SAVED (committed) tables (Only PLACED orders)
+  // Filter active live orders by SAVED (committed) tables OR unassigned tables (Only PLACED orders)
   const activeOrders = orders.filter(
     o => o.status === 'PLACED' &&
-         savedTables.includes(o.tableId)
+         (savedTables.includes(o.tableId) || !o.table.assignedWaiterId)
   );
   const readyCount = orders.filter(
     o => o.status === 'READY' && savedTables.includes(o.tableId)
@@ -747,7 +757,7 @@ export default function WaiterOrders() {
       )}
 
       {/* Page Header */}
-      {savedTables.length >= 2 && (
+      {(savedTables.length >= 2 || activeOrders.length > 0) && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <div>
             <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-0.5">Live Orders</h1>
@@ -770,7 +780,7 @@ export default function WaiterOrders() {
       )}
 
       {/* Orders Grid */}
-      {savedTables.length < 2 ? (
+      {(savedTables.length < 2 && activeOrders.length === 0) ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-gray-300">
           <div className="mx-auto w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center text-amber-500 mb-4">
             <Utensils size={32} />
@@ -798,6 +808,7 @@ export default function WaiterOrders() {
               onUpdateStatus={handleUpdateStatus}
               onEditOrder={setSelectedOrderForEdit}
               completing={completingId === order.id}
+              updating={updatingOrderId === order.id}
             />
           ))}
         </div>

@@ -11,7 +11,8 @@ import { CartProvider } from '@/hooks/useCart';
 import { useEventSource } from '@/hooks/useEventSource';
 import { HOTEL_NAME, getStatusLabel } from '@/lib/utils';
 import { CustomerUnavailabilityModal } from '@/components/menu/CustomerUnavailabilityModal';
-import { UtensilsCrossed, Search, X, Smartphone, Edit2, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
+import { UtensilsCrossed, Search, X, LogOut, Clock, CreditCard, ChefHat, CheckCircle2 } from 'lucide-react';
+
 
 export default function MenuPage() {
   const { tableId = 'table-1' } = useParams<{ tableId: string }>();
@@ -22,20 +23,24 @@ export default function MenuPage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [initializingSession, setInitializingSession] = useState(true);
-  // Track MULTIPLE concurrent orders (e.g. first round + second round)
   const [orderIds, setOrderIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Phone auth state
   const [customerPhone, setCustomerPhone] = useState<string | null>(null);
-  const [inputPhone, setInputPhone] = useState('');
+  const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [signInLoading, setSignInLoading] = useState(false);
+  const [signInError, setSignInError] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
 
   const [activeOrders, setActiveOrders] = useState<OrderWithItems[]>([]);
   const { lastEvent } = useEventSource('/api/events');
 
-  // Ref to scroll the item list back to top on category switch
   const itemListRef = useRef<HTMLDivElement>(null);
 
-  // Initialize and verify session on mount or tableId change
+  // ── Session initialization ──────────────────────────────────────────────
   useEffect(() => {
     const initializeSession = async () => {
       setInitializingSession(true);
@@ -44,7 +49,6 @@ export default function MenuPage() {
         try {
           const parsed = JSON.parse(rawSession);
           if (parsed && parsed.customerId && parsed.phone) {
-            // Verify session on the backend (extends session by 24 hours if valid)
             const res = await fetch('/api/sessions/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -55,14 +59,12 @@ export default function MenuPage() {
               if (data.valid && data.session) {
                 setCustomerId(data.session.customerId);
                 setCustomerPhone(data.session.phone);
+                setCustomerName(parsed.name || 'Guest');
 
-                // Fetch active orders for this customer to restore tracking on tab reopen/refresh
                 const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.session.customerId}`);
                 if (ordersRes.ok) {
                   const activeOrdersData = await ordersRes.json();
                   const dbOrderIds = activeOrdersData.map((o: any) => o.id);
-                  
-                  // Merge with any current sessionStorage IDs
                   let localOrderIds: string[] = [];
                   const rawLocal = sessionStorage.getItem(`kh_orders_${tableId}`);
                   if (rawLocal) {
@@ -71,7 +73,6 @@ export default function MenuPage() {
                       if (Array.isArray(parsedLocal)) localOrderIds = parsedLocal;
                     } catch {}
                   }
-                  
                   const combined = Array.from(new Set([...dbOrderIds, ...localOrderIds]));
                   setOrderIds(combined);
                   if (combined.length > 0) {
@@ -88,10 +89,10 @@ export default function MenuPage() {
         }
       }
 
-      // If session is missing, expired, or invalid, reset
       localStorage.removeItem(`kh_customer_session_${tableId}`);
       setCustomerId(null);
       setCustomerPhone(null);
+      setCustomerName(null);
       setOrderIds([]);
       sessionStorage.removeItem(`kh_orders_${tableId}`);
       setInitializingSession(false);
@@ -100,7 +101,81 @@ export default function MenuPage() {
     initializeSession();
   }, [tableId]);
 
-  // Fetch Menu (independent of tableId and session)
+  // ── Phone Sign-In Submission ────────────────────────────────────────────
+  const handlePhoneSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneInput || phoneInput.trim().length < 10) {
+      setSignInError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    if (!nameInput || !nameInput.trim()) {
+      setSignInError('Please enter your name.');
+      return;
+    }
+
+    setSignInLoading(true);
+    setSignInError('');
+
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          phone: phoneInput.trim(), 
+          name: nameInput.trim(), 
+          tableId 
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify({
+          customerId: data.customerId,
+          phone: data.phone,
+          name: data.name,
+        }));
+        setCustomerPhone(data.phone);
+        setCustomerName(data.name);
+        setCustomerId(data.customerId);
+
+        try {
+          const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.customerId}`);
+          if (ordersRes.ok) {
+            const activeOrdersData = await ordersRes.json();
+            const dbOrderIds = activeOrdersData.map((o: any) => o.id);
+            setOrderIds(dbOrderIds);
+            if (dbOrderIds.length > 0) {
+              sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(dbOrderIds));
+            } else {
+              sessionStorage.removeItem(`kh_orders_${tableId}`);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to restore active orders after login:', err);
+          setOrderIds([]);
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setSignInError(errData.error || 'Failed to sign in. Please try again.');
+      }
+    } catch (err) {
+      setSignInError('Network error. Please try again.');
+    } finally {
+      setSignInLoading(false);
+    }
+  };
+
+  // ── Sign out ────────────────────────────────────────────────────────────
+  const handleSignOut = () => {
+    localStorage.removeItem(`kh_customer_session_${tableId}`);
+    sessionStorage.removeItem(`kh_orders_${tableId}`);
+    setCustomerPhone(null);
+    setCustomerName(null);
+    setCustomerId(null);
+    setOrderIds([]);
+  };
+
+  // ── Fetch Menu ──────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchMenu = async () => {
       try {
@@ -128,10 +203,7 @@ export default function MenuPage() {
 
     fetchMenu();
     const interval = setInterval(fetchMenu, 2000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const fetchActiveOrders = useCallback(async () => {
@@ -152,9 +224,7 @@ export default function MenuPage() {
     }
   }, [orderIds]);
 
-  useEffect(() => {
-    fetchActiveOrders();
-  }, [fetchActiveOrders]);
+  useEffect(() => { fetchActiveOrders(); }, [fetchActiveOrders]);
 
   useEffect(() => {
     if (lastEvent?.type === 'ORDER_UPDATE') {
@@ -164,7 +234,6 @@ export default function MenuPage() {
 
   const handleSelectCategory = (id: string) => {
     setActiveCategory(id);
-    // Instantly scroll item list back to top
     if (itemListRef.current) {
       itemListRef.current.scrollTo({ top: 0 });
     }
@@ -179,7 +248,6 @@ export default function MenuPage() {
     });
   };
 
-  // Remove a specific completed order from the list
   const handleOrderCompleted = (completedOrderId: string) => {
     setOrderIds(prev => {
       const updated = prev.filter(id => id !== completedOrderId);
@@ -188,7 +256,6 @@ export default function MenuPage() {
     });
   };
 
-  // Items for the active category shown first, rest grouped below
   const activeItems = menuItems.filter((item) => item.categoryId === activeCategory);
   const activeCategory_ = categories.find((c) => c.id === activeCategory);
   const otherCategories = categories.filter((c) => c.id !== activeCategory);
@@ -202,96 +269,87 @@ export default function MenuPage() {
     );
   }
 
+  // ── Phone Sign-In Screen ───────────────────────────────────────────────
   if (!customerPhone) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4 max-w-md mx-auto shadow-2xl relative overflow-hidden">
-        {/* Decorative background blur blobs */}
-        <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-100 rounded-full blur-3xl opacity-50"></div>
-        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-green-100 rounded-full blur-3xl opacity-50"></div>
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background decorations */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-red-500/10 rounded-full blur-3xl" />
+          <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl" />
+        </div>
 
-        <div className="w-full bg-white rounded-2xl p-6 shadow-xl border border-gray-100 relative z-10 text-center animate-slide-up">
-          <img src="/logo.png" alt={HOTEL_NAME} className="h-28 w-auto mx-auto drop-shadow-sm mb-4" />
-          
-          <h2 className="font-serif font-bold text-2xl text-gray-900 mb-1">Welcome to {HOTEL_NAME}</h2>
-          <p className="text-xs text-gray-500 mb-6">Start ordering at Table <span className="font-bold text-green-600">{tableId.replace('table-', '')}</span></p>
-
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            const trimmed = inputPhone.trim();
-            if (trimmed) {
-              try {
-                const res = await fetch('/api/sessions', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phone: trimmed, tableId })
-                });
-                if (res.ok) {
-                  const data = await res.json();
-                  localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify({
-                    customerId: data.customerId,
-                    phone: data.phone
-                  }));
-                  setCustomerPhone(data.phone);
-                  setCustomerId(data.customerId);
-
-                  // Fetch and restore active orders for this customer to state/storage
-                  try {
-                    const ordersRes = await fetch(`/api/orders/active?tableId=${tableId}&customerId=${data.customerId}`);
-                    if (ordersRes.ok) {
-                      const activeOrdersData = await ordersRes.json();
-                      const dbOrderIds = activeOrdersData.map((o: any) => o.id);
-                      setOrderIds(dbOrderIds);
-                      if (dbOrderIds.length > 0) {
-                        sessionStorage.setItem(`kh_orders_${tableId}`, JSON.stringify(dbOrderIds));
-                      } else {
-                        sessionStorage.removeItem(`kh_orders_${tableId}`);
-                      }
-                    } else {
-                      setOrderIds([]);
-                      sessionStorage.removeItem(`kh_orders_${tableId}`);
-                    }
-                  } catch (err) {
-                    console.error('Failed to restore active orders on login:', err);
-                    setOrderIds([]);
-                    sessionStorage.removeItem(`kh_orders_${tableId}`);
-                  }
-                } else {
-                  const errData = await res.json().catch(() => ({}));
-                  alert(errData.error || 'Failed to establish session. Please try again.');
-                }
-              } catch (err) {
-                alert('Network error. Please try again.');
-              }
-            }
-          }} className="space-y-4 text-left">
-            <div>
-              <label htmlFor="customer-phone" className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                Enter your mobile number
-              </label>
-              <div className="relative">
-                <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  id="customer-phone"
-                  type="tel"
-                  placeholder="e.g. 9876543210"
-                  required
-                  pattern="[0-9]{7,15}"
-                  title="Please enter a valid mobile number (digits only)"
-                  value={inputPhone}
-                  onChange={(e) => setInputPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition"
-                  autoFocus
-                />
-              </div>
+        <div className="w-full max-w-sm relative z-10 animate-slide-up">
+          {/* Card */}
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl text-center">
+            {/* Logo */}
+            <div className="mb-6">
+              <img src="/logo.png" alt={HOTEL_NAME} className="h-24 w-auto mx-auto drop-shadow-lg" />
             </div>
 
-            <button
-              type="submit"
-              className="w-full py-3 bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white font-semibold rounded-xl text-sm shadow-md shadow-red-600/10 transition-all flex items-center justify-center gap-2"
-            >
-              <span>Explore Menu</span> &rarr;
-            </button>
-          </form>
+            <h1 className="font-serif font-bold text-2xl text-white mb-1">{HOTEL_NAME}</h1>
+            <p className="text-white/50 text-sm mb-1">Table <span className="font-bold text-amber-400">{tableId.replace('table-', '')}</span></p>
+            <p className="text-white/40 text-xs mb-8">Enter your details to view the menu &amp; order</p>
+
+            <form onSubmit={handlePhoneSignIn} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-1.5 uppercase tracking-wider">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  placeholder="Enter 10-digit mobile number"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm transition placeholder:text-white/30"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-1.5 uppercase tracking-wider">
+                  Your Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your name"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-sm transition placeholder:text-white/30"
+                  required
+                />
+              </div>
+
+              {signInError && (
+                <p className="text-red-400 text-xs mt-3 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                  {signInError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={signInLoading}
+                className="w-full py-3 mt-4 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-500/50 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/10 active:scale-[0.99] flex items-center justify-center gap-2"
+              >
+                {signInLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-slate-950/20 border-t-slate-950 rounded-full animate-spin" />
+                    <span>Signing in...</span>
+                  </>
+                ) : (
+                  <span>Enter Menu</span>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 pt-6 border-t border-white/10">
+              <p className="text-white/30 text-[10px] leading-relaxed">
+                Your mobile number is used only to track your order at this table.<br />
+                We do not store or share your personal information.
+              </p>
+            </div>
+          </div>
         </div>
       </main>
     );
@@ -308,33 +366,19 @@ export default function MenuPage() {
               Table <span className="text-green-600 font-bold">{tableId.replace('table-', '')}</span>
             </p>
             {customerPhone && (
-              <div className="flex items-center justify-center gap-1 text-[11px] text-gray-500 mt-1.5 bg-gray-50 border border-gray-150 px-2.5 py-1.5 rounded-xl">
-                <Smartphone size={10} className="text-gray-400 shrink-0" />
-                <span className="font-extrabold text-gray-800 tracking-wide">{customerPhone}</span>
+              <div className="flex items-center justify-center gap-2 mt-1.5 bg-gray-50 border border-gray-150 px-2.5 py-1.5 rounded-xl">
+                <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <span className="text-[8px] font-bold text-blue-600">{(customerName || customerPhone)[0].toUpperCase()}</span>
+                </div>
+                <span className="font-extrabold text-gray-800 text-[11px] tracking-wide truncate max-w-[140px]">
+                  {customerName}
+                </span>
                 <button
-                  onClick={() => {
-                    const newPhone = prompt('Update your mobile number:', customerPhone);
-                    if (newPhone && newPhone.trim()) {
-                      const trimmed = newPhone.trim().replace(/[^0-9]/g, '');
-                      if (!/^[0-9]{7,15}$/.test(trimmed)) {
-                        alert('Please enter a valid mobile number (digits only)');
-                        return;
-                      }
-                      const rawSession = localStorage.getItem(`kh_customer_session_${tableId}`);
-                      if (rawSession) {
-                        try {
-                          const parsed = JSON.parse(rawSession);
-                          parsed.phone = trimmed;
-                          localStorage.setItem(`kh_customer_session_${tableId}`, JSON.stringify(parsed));
-                        } catch {}
-                      }
-                      setCustomerPhone(trimmed);
-                    }
-                  }}
-                  className="p-0.5 rounded text-gray-400 hover:text-red-500 transition ml-1"
-                  title="Edit Mobile Number"
+                  onClick={handleSignOut}
+                  className="p-0.5 rounded text-gray-400 hover:text-red-500 transition ml-0.5"
+                  title="Sign out"
                 >
-                  <Edit2 size={10} />
+                  <LogOut size={10} />
                 </button>
               </div>
             )}

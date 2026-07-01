@@ -3,16 +3,39 @@ import { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { prisma } from '../lib/prisma.js';
 import { eventEmitter } from '../lib/event-emitter.js';
 import { TAX_RATE, generateBillNumber } from '../lib/utils.js';
+import fs from 'fs';
+import path from 'path';
 
-export async function mergeAndGetCustomerBill(phone_number: string | null, tableId?: string, targetOrderId?: string) {
+function debugLog(msg: string) {
+  try {
+    fs.appendFileSync(path.join(process.cwd(), 'debug.log'), `${new Date().toISOString()} - ${msg}\n`);
+  } catch (err) {
+    console.error('debugLog error', err);
+  }
+}
+
+export async function mergeAndGetCustomerBill(phone_number: string | null, tableId?: string, targetOrderId?: string, customer_email?: string | null) {
+  debugLog(`mergeAndGetCustomerBill start - phone: ${phone_number}, tableId: ${tableId}, targetOrderId: ${targetOrderId}, email: ${customer_email}`);
   let orders: any[] = [];
   
-  // Clean up phone number
+  // Prefer email-based lookup for Google-authenticated sessions
+  const cleanEmail = customer_email ? customer_email.toLowerCase().trim() : null;
+  // Legacy phone fallback
   const isGuest = !phone_number || phone_number.trim() === '' || phone_number.toLowerCase() === 'guest';
   const cleanPhone = isGuest ? null : phone_number!.trim();
 
-  if (cleanPhone) {
-    // Fetch all active orders for this phone number across the entire restaurant
+  if (cleanEmail) {
+    // Email-keyed: fetch all active orders for this customer email
+    orders = await prisma.order.findMany({
+      where: {
+        customer_email: cleanEmail,
+        status: { notIn: ['PAID', 'CANCELLED'] }
+      },
+      include: { bill: true, items: true }
+    });
+    debugLog(`mergeAndGetCustomerBill cleanEmail: ${cleanEmail} found orders: ${orders.length}`);
+  } else if (cleanPhone) {
+    // Legacy phone-keyed lookup
     orders = await prisma.order.findMany({
       where: {
         phone_number: cleanPhone,
@@ -20,6 +43,7 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
       },
       include: { bill: true, items: true }
     });
+    debugLog(`mergeAndGetCustomerBill cleanPhone: ${cleanPhone} found orders: ${orders.length}`);
   } else {
     // If Guest, we look at the specific table (if tableId is known) or the table of the target order.
     let resolvedTableId = tableId;
@@ -33,7 +57,7 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
     }
 
     if (resolvedTableId) {
-      // Fetch all active guest orders at this specific table
+      // Fetch all active guest guest orders at this specific table
       orders = await prisma.order.findMany({
         where: {
           tableId: resolvedTableId,
@@ -46,6 +70,7 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
         },
         include: { bill: true, items: true }
       });
+      debugLog(`mergeAndGetCustomerBill guest resolvedTableId: ${resolvedTableId} found orders: ${orders.length}`);
     } else if (targetOrderId) {
       // Fallback to just the target order itself
       const targetOrder = await prisma.order.findUnique({
@@ -55,14 +80,49 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
       if (targetOrder && !['PAID', 'CANCELLED'].includes(targetOrder.status)) {
         orders = [targetOrder];
       }
+      debugLog(`mergeAndGetCustomerBill guest targetOrderId: ${targetOrderId} found orders: ${orders.length}`);
     }
   }
 
   if (orders.length === 0) {
-    throw new Error('No active orders found to generate a bill');
+    // Fallback: try to load by table guest orders
+    let resolvedTableId = tableId;
+    if (!resolvedTableId && targetOrderId) {
+      const targetOrder = await prisma.order.findUnique({ where: { id: targetOrderId } });
+      if (targetOrder) resolvedTableId = targetOrder.tableId;
+    }
+    if (resolvedTableId) {
+      orders = await prisma.order.findMany({
+        where: {
+          tableId: resolvedTableId,
+          customer_email: null,
+          OR: [
+            { phone_number: null },
+            { phone_number: '' },
+            { phone_number: 'Guest' }
+          ],
+          status: { notIn: ['PAID', 'CANCELLED'] }
+        },
+        include: { bill: true, items: true }
+      });
+      debugLog(`mergeAndGetCustomerBill fallback guest resolvedTableId: ${resolvedTableId} found orders: ${orders.length}`);
+    } else if (targetOrderId) {
+      const targetOrder = await prisma.order.findUnique({
+        where: { id: targetOrderId },
+        include: { bill: true, items: true }
+      });
+      if (targetOrder && !['PAID', 'CANCELLED'].includes(targetOrder.status)) {
+        orders = [targetOrder];
+      }
+      debugLog(`mergeAndGetCustomerBill fallback guest targetOrderId: ${targetOrderId} found orders: ${orders.length}`);
+    }
   }
 
-  // Step 1: Generate bills for any orders that don't have one yet
+  debugLog(`mergeAndGetCustomerBill final orders count: ${orders.length}`);
+  if (orders.length === 0) {
+    debugLog(`mergeAndGetCustomerBill error - orders count is 0`);
+    throw new Error('Failed to generate bills');
+  }// Step 1: Generate bills for any orders that don't have one yet
   for (const order of orders) {
     if (!order.bill) {
       const subtotal = order.total;
@@ -73,6 +133,7 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
         data: {
           orderId: order.id,
           phone_number: cleanPhone,
+          customer_email: cleanEmail,
           subtotal,
           taxAmount,
           total,
@@ -139,15 +200,22 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
 
   const mergedBill = await prisma.$transaction(async (tx) => {
     for (const sourceBill of otherBills) {
+      // Check if source bill still exists before attempting deletion to prevent race condition crashes
+      const sourceExists = await tx.bill.findUnique({ where: { id: sourceBill.id } });
+      if (!sourceExists) {
+        debugLog(`mergeAndGetCustomerBill - source bill ${sourceBill.id} already deleted, skipping`);
+        continue;
+      }
+
       // Move all items from source order to primary order
       await tx.orderItem.updateMany({
         where: { orderId: sourceBill.orderId },
         data: { orderId: primaryBill.orderId }
       });
 
-      // Delete source bill and order
-      await tx.bill.delete({ where: { id: sourceBill.id } });
-      await tx.order.delete({ where: { id: sourceBill.orderId } });
+      // Delete source bill and order safely using deleteMany to prevent P2025 crashes
+      await tx.bill.deleteMany({ where: { id: sourceBill.id } });
+      await tx.order.deleteMany({ where: { id: sourceBill.orderId } });
     }
 
     // Recalculate totals for primary order
@@ -186,18 +254,57 @@ export async function mergeAndGetCustomerBill(phone_number: string | null, table
     eventEmitter.emit('ORDER_UPDATE', {
       orderId: primaryBill.orderId,
       status: 'PENDING',
-      tableId: primaryBill.order.tableId,
+      tableId: updated.order.tableId,
       billId: primaryBill.id,
     });
 
     return updated;
   });
 
+  await resequenceAllBills();
   return mergedBill;
 }
 
+export async function resequenceAllBills() {
+  try {
+    const bills = await prisma.bill.findMany({
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const groups: { [dateStr: string]: any[] } = {};
+    for (const bill of bills) {
+      const d = new Date(bill.createdAt);
+      const dateStr = d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      if (!groups[dateStr]) {
+        groups[dateStr] = [];
+      }
+      groups[dateStr].push(bill);
+    }
+
+    for (const [dateStr, dayBills] of Object.entries(groups)) {
+      for (let i = 0; i < dayBills.length; i++) {
+        const bill = dayBills[i];
+        const newBillNumber = String(i + 1).padStart(4, '0');
+        if (bill.billNumber !== newBillNumber) {
+          await prisma.bill.update({
+            where: { id: bill.id },
+            data: { billNumber: newBillNumber }
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to resequence bills:', err);
+  }
+}
+
 export async function mergeAndGetTableBill(tableId: string) {
-  // Find any active order for the table, get its phone number, and call mergeAndGetCustomerBill
+  // Find any active order for the table and call mergeAndGetCustomerBill
   const activeOrder = await prisma.order.findFirst({
     where: {
       tableId,
@@ -206,6 +313,10 @@ export async function mergeAndGetTableBill(tableId: string) {
   });
   if (!activeOrder) {
     throw new Error('No active orders found for this table');
+  }
+  // Prefer email-based merge, fallback to phone or guest
+  if (activeOrder.customer_email) {
+    return mergeAndGetCustomerBill(null, tableId, activeOrder.id, activeOrder.customer_email);
   }
   const phone = activeOrder.phone_number || 'Guest';
   return mergeAndGetCustomerBill(phone, tableId, activeOrder.id);
@@ -233,6 +344,7 @@ export async function createBill(req: Request, res: Response) {
 
 export async function getBills(req: Request, res: Response) {
   try {
+    await resequenceAllBills();
     const bills = await prisma.bill.findMany({
       include: {
         order: {
@@ -502,10 +614,12 @@ export async function deleteBill(req: Request, res: Response) {
       // Delete order items first (FK constraint)
       await tx.orderItem.deleteMany({ where: { orderId: bill.orderId } });
       // Delete the bill
-      await tx.bill.delete({ where: { id } });
+      await tx.bill.deleteMany({ where: { id } });
       // Delete the order
-      await tx.order.delete({ where: { id: bill.orderId } });
+      await tx.order.deleteMany({ where: { id: bill.orderId } });
     });
+
+    await resequenceAllBills();
 
     return res.json({ success: true, message: 'Bill and associated order deleted successfully.' });
   } catch (error) {
@@ -654,12 +768,12 @@ export async function mergeBills(req: Request, res: Response) {
         }
       });
 
-      // 4. Delete source bill and source order
-      await tx.bill.delete({
+      // 4. Delete source bill and source order safely using deleteMany
+      await tx.bill.deleteMany({
         where: { id: sourceBillId }
       });
 
-      await tx.order.delete({
+      await tx.order.deleteMany({
         where: { id: sourceBill.orderId }
       });
 
@@ -673,6 +787,8 @@ export async function mergeBills(req: Request, res: Response) {
 
       return updatedBill;
     });
+
+    await resequenceAllBills();
 
     return res.json({ 
       success: true, 
@@ -693,7 +809,8 @@ export async function mergeBills(req: Request, res: Response) {
 export async function tableCheckout(req: Request, res: Response) {
   try {
     const { tableId } = req.params; // can be slug or id
-    const { phone } = req.body;
+    const { email, phone } = req.body;
+    debugLog(`tableCheckout start - tableId: ${tableId}, email: ${email}, phone: ${phone}`);
 
     // Resolve table
     const table = await prisma.table.findFirst({
@@ -701,13 +818,19 @@ export async function tableCheckout(req: Request, res: Response) {
     });
 
     if (!table) {
+      debugLog(`tableCheckout error - Table not found for tableId: ${tableId}`);
+      try {
+        fs.writeFileSync(path.join(process.cwd(), 'query_error_log.txt'), `tableCheckout FAILED!\nError: Table not found for tableId: ${tableId}\n`);
+      } catch (fsErr) {}
       return res.status(404).json({ error: 'Table not found' });
     }
+    debugLog(`tableCheckout table found - id: ${table.id}`);
 
-    let targetPhone = phone;
+    let targetEmail: string | null = email || null;
+    let targetPhone: string | null = phone || null;
 
-    if (!targetPhone) {
-      // Fallback: get phone number of active orders at this table
+    if (!targetEmail && !targetPhone) {
+      // Fallback: get identifier from active orders at this table
       const activeOrder = await prisma.order.findFirst({
         where: {
           tableId: table.id,
@@ -715,16 +838,28 @@ export async function tableCheckout(req: Request, res: Response) {
         }
       });
       if (activeOrder) {
+        targetEmail = activeOrder.customer_email || null;
         targetPhone = activeOrder.phone_number || 'Guest';
+        debugLog(`tableCheckout fallback found active order - id: ${activeOrder.id}, email: ${targetEmail}, phone: ${targetPhone}`);
       } else {
-        return res.status(400).json({ error: 'Customer phone number is required for checkout' });
+        debugLog(`tableCheckout error - No active orders found for table id: ${table.id}`);
+        try {
+          fs.writeFileSync(path.join(process.cwd(), 'query_error_log.txt'), `tableCheckout FAILED!\nError: No active orders found for this table\n`);
+        } catch (fsErr) {}
+        return res.status(400).json({ error: 'No active orders found for this table' });
       }
     }
 
-    // Generate/merge bill for this phone number
-    const bill = await mergeAndGetCustomerBill(targetPhone, table.id);
+    // Generate/merge bill — prefer email, fallback to phone
+    debugLog(`tableCheckout calling mergeAndGetCustomerBill - email: ${targetEmail}, phone: ${targetPhone}`);
+    const bill = await mergeAndGetCustomerBill(targetPhone, table.id, undefined, targetEmail);
+    debugLog(`tableCheckout success - generated bill: ${bill?.id}`);
     return res.json(bill);
   } catch (error: any) {
+    debugLog(`tableCheckout exception - message: ${error.message}, stack: ${error.stack}`);
+    try {
+      fs.writeFileSync(path.join(process.cwd(), 'query_error_log.txt'), `tableCheckout FAILED!\nError: ${error.message}\nStack: ${error.stack}\n`);
+    } catch (fsErr) {}
     console.error('Failed to process customer checkout:', error);
     return res.status(500).json({ error: error.message || 'Failed to process checkout' });
   }
@@ -751,7 +886,12 @@ export async function createBillWaiter(req: Request, res: Response) {
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const bill = await mergeAndGetCustomerBill(order.phone_number, order.tableId, order.id);
+    const bill = await mergeAndGetCustomerBill(
+      order.phone_number,
+      order.tableId,
+      order.id,
+      order.customer_email
+    );
     return res.json(bill);
   } catch (error: any) {
     console.error('Failed to create waiter bill:', error);
@@ -765,6 +905,7 @@ export async function createBillWaiter(req: Request, res: Response) {
  */
 export async function getBillsWaiter(req: Request, res: Response) {
   try {
+    await resequenceAllBills();
     const authReq = req as AuthenticatedRequest;
     const waiter = await prisma.waiter.findUnique({
       where: { username: authReq.username }
@@ -889,8 +1030,30 @@ export async function markBillPaid(req: Request, res: Response) {
     });
 
     if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    
     if (bill.paymentStatus === 'PAID') {
-      return res.status(400).json({ error: 'Bill is already paid' });
+      if (bill.order.status !== 'PAID') {
+        await prisma.order.update({
+          where: { id: bill.orderId },
+          data: { status: 'PAID' }
+        });
+
+        eventEmitter.emit('ORDER_UPDATE', {
+          orderId: bill.orderId,
+          status: 'PAID',
+          tableId: bill.order.tableId,
+          billId: bill.id,
+          tableNumber: bill.order.table.tableNumber,
+        });
+      }
+
+      const fullBill = await prisma.bill.findUnique({
+        where: { id },
+        include: {
+          order: { include: { table: true, items: { include: { menuItem: true } } } }
+        }
+      });
+      return res.json(fullBill || bill);
     }
 
     const updatedBill = await prisma.bill.update({
@@ -920,8 +1083,13 @@ export async function markBillPaid(req: Request, res: Response) {
     });
 
     return res.json(updatedBill);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to mark bill as paid:', error);
+    import('fs').then(fs => {
+      import('path').then(path => {
+        fs.writeFileSync(path.join(process.cwd(), 'query_error_log.txt'), `MARK_BILL_PAID FAILED!\nError: ${error.message}\nStack: ${error.stack}\n`);
+      });
+    });
     return res.status(500).json({ error: 'Failed to mark bill as paid' });
   }
 }
@@ -1323,6 +1491,7 @@ export async function serveOrder(req: Request, res: Response) {
       }
     });
 
+    // Auto-merging on SERVED has been disabled. Served orders remain independent.
     return res.json(updatedOrder);
   } catch (error) {
     console.error(error);

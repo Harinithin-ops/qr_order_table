@@ -51,4 +51,11 @@ export function getEvents(req: Request, res: Response) {
     clearInterval(timer);
     eventEmitter.off('*', listener);
   });
+
+  // Also clean up on response stream error to prevent EPIPE/ECONNRESET crashes
+  res.on('error', (err) => {
+    console.error('[SSE Response stream error]:', err);
+    clearInterval(timer);
+    eventEmitter.off('*', listener);
+  });
 }

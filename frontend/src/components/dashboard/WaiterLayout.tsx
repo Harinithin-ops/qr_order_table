@@ -74,6 +74,9 @@ export default function WaiterLayout() {
     } catch (err) {
       console.error('Failed to logout:', err);
     }
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userData');
     navigate('/');
   };
 

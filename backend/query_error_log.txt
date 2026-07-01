@@ -1,0 +1,6 @@
+tableCheckout FAILED!
+Error: Failed to generate bills
+Stack: Error: Failed to generate bills
+    at mergeAndGetCustomerBill (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:124:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async tableCheckout (F:\ertyu\hotel\food_order_system\backend\src\controllers\bills.controller.ts:855:18)

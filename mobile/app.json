@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Food Order System",
+    "slug": "food-order-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.harinithin.foodordersystem"
+    },
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4103d635-a73f-4447-bc2e-16a0493d3974"
+      }
+    }
+  }
+}
